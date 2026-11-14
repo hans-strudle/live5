@@ -19,12 +19,17 @@
     <video id="v" autoplay muted playsinline controls></video>
     <div class="badge" id="badge"></div>
   </div>
-  <div class="controls"><button class="btn ghost" id="comments" type="button" hidden>💬 Comments</button></div>
+  <div class="controls">
+    <button class="btn ghost" id="comments" type="button" hidden>💬 Comments</button>
+    <button class="btn ghost" id="share" type="button" hidden>Share</button>
+  </div>
   <p class="muted" id="msg" style="text-align:center"></p>
 </main>
 <script type="module">
   import { openComments } from '/comments.js';
+  import { shareStream } from '/share.js';
   const btn = document.getElementById('comments');
+  const shareBtn = document.getElementById('share');
   const id = location.pathname.split('/').pop();
   const label = (n) => { btn.textContent = n ? `💬 Comments · ${n}` : '💬 Comments'; };
   const r = await fetch(`/api/streams/${id}`).catch(() => null);
@@ -33,6 +38,11 @@
     label(s.commentCount);
     btn.hidden = false;
     btn.onclick = () => openComments(s, { onCount: label });
+    shareBtn.hidden = false;
+    shareBtn.onclick = async () => {
+      const fresh = await fetch(`/api/streams/${id}`).then((x) => x.json()).catch(() => s); // live or ended now?
+      shareStream(fresh);
+    };
   }
 </script>
 <script>

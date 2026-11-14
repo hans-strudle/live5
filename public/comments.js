@@ -1,7 +1,10 @@
 // Comment sheet: slides up over the video, lists a broadcast's comments (oldest first, like a
 // chat) and lets anyone add one. While open it checks for new comments every few seconds.
 import { avatarNode } from '/feed.js';
-import { getUser, clearUser, authHeaders, createUser } from '/me.js';
+import { clearUser, authHeaders, ensureUser } from '/me.js';
+
+// Asked after pressing Send, only by someone without a profile on this device yet.
+const NAME_PROMPT = { title: 'Your name', note: 'Shown with your comment. No account needed.', action: 'Post comment' };
 
 const POLL_MS = 4000;
 let current = null; // the open sheet, if any
@@ -39,8 +42,6 @@ export function openComments(stream, { onCount } = {}) {
   empty.hidden = true;
 
   const form = el('form', 'comment-form');
-  const nameInput = el('input', 'comment-name');
-  Object.assign(nameInput, { name: 'name', maxLength: 30, placeholder: 'Your name (shown with your comment)', autocomplete: 'nickname' });
   const row = el('div', 'comment-row');
   const textInput = el('input', 'comment-text');
   Object.assign(textInput, { name: 'text', maxLength: 200, placeholder: 'Add a comment…', autocomplete: 'off', required: true });
@@ -49,14 +50,12 @@ export function openComments(stream, { onCount } = {}) {
   send.type = 'submit';
   row.append(textInput, send);
   const note = el('p', 'comment-note');
-  form.append(nameInput, row, note);
+  form.append(row, note);
 
   dialog.append(head, list, empty, form);
   document.body.append(dialog);
 
   let next = 0, count = 0, timer = null, closed = false;
-  const needName = () => { nameInput.hidden = !!getUser(); };
-  needName();
 
   function setCount(n) {
     count = n;
@@ -101,24 +100,20 @@ export function openComments(stream, { onCount } = {}) {
     note.textContent = '';
     send.disabled = true;
     try {
-      let user = getUser();
-      if (!user) {
-        const name = nameInput.value.replace(/\s+/g, ' ').trim();
-        if (!name) { note.textContent = 'Enter your name first.'; nameInput.focus(); return; }
-        user = await createUser(name);
-        needName();
-      }
-      const r = await fetch(`/api/streams/${stream.id}/comments`, {
-        method: 'POST', headers: authHeaders(user), body: JSON.stringify({ text }),
+      // No profile on this device yet: ask for a name in a popup, then post.
+      let user = await ensureUser(NAME_PROMPT);
+      if (!user) return; // cancelled; the comment stays in the box
+      const post = (u) => fetch(`/api/streams/${stream.id}/comments`, {
+        method: 'POST', headers: authHeaders(u), body: JSON.stringify({ text }),
       });
-      const body = await r.json().catch(() => ({}));
-      if (r.status === 401) { // this server doesn't know this device's user any more
+      let r = await post(user);
+      if (r.status === 401) { // this server doesn't know this device's user any more: ask again
         clearUser();
-        needName();
-        note.textContent = 'Enter your name to comment.';
-        nameInput.focus();
-        return;
+        user = await ensureUser(NAME_PROMPT);
+        if (!user) return;
+        r = await post(user);
       }
+      const body = await r.json().catch(() => ({}));
       if (!r.ok) { note.textContent = body.error ? `${body.error[0].toUpperCase()}${body.error.slice(1)}.` : 'Could not send. Try again.'; return; }
       textInput.value = '';
       await load(); // picks up this comment (and any others) in order

@@ -3,6 +3,7 @@
 // Used by the home page (everyone) and profile pages (one user).
 
 import { openComments } from '/comments.js';
+import { shareStream, shareIcon } from '/share.js';
 
 const MS = window.ManagedMediaSource || window.MediaSource;
 const PAGE = 8;
@@ -127,7 +128,14 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
       openComments(card.stream, { onCount: (n) => { card.stream.commentCount = n; showCount(n); } });
     };
 
-    node.append(video, top, info, talk, sound, progress, note);
+    // Share: the phone's share sheet, or copy the link.
+    const share = el('button', 'share-btn');
+    share.type = 'button';
+    share.setAttribute('aria-label', 'Share');
+    share.append(shareIcon());
+    share.onclick = (e) => { e.stopPropagation(); shareStream(card.stream); };
+
+    node.append(video, top, info, share, talk, sound, progress, note);
 
     // Tap the video: first tap turns sound on; after that it pauses/resumes.
     video.onclick = () => {

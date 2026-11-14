@@ -9,21 +9,11 @@
   <script src="/welcome.js" defer></script>
 </head>
 <body>
-<main>
-  <header>
-    <a class="logo" href="/">live<span>5</span></a>
-  </header>
-  <form id="who" class="who" hidden>
-    <label for="name">Enter your name</label>
-    <input id="name" name="name" maxlength="30" autocomplete="nickname" autocapitalize="words"
-           enterkeyhint="go" placeholder="Your name" required>
-    <button class="btn" type="submit" id="who-submit">Continue</button>
-    <p class="muted" id="who-msg">Shown to everyone who watches. No account needed.</p>
-  </form>
-</main>
 <!-- The studio: the camera fills the screen; status across the top, controls over the bottom.
-     The Go live button is there from the start (greyed out until the camera is ready). -->
-<div id="studio" class="studio" hidden>
+     The Go live button is there from the start (greyed out until the camera is ready).
+     Someone without a profile is asked for their name in a popup over the camera when they
+     press Go live. -->
+<div id="studio" class="studio">
   <video id="cam" autoplay muted playsinline></video>
   <div class="studio-top">
     <a class="logo" href="/" aria-label="Back to live5">live<span>5</span></a>
@@ -43,7 +33,9 @@
     <p class="share" id="share" hidden></p>
   </div>
 </div>
-<script>
+<script type="module">
+  import { getUser, clearUser, authHeaders as headersFor, ensureUser, askName, renameUser } from '/me.js';
+  import { shareStream, shareIcon } from '/share.js';
   const $ = (id) => document.getElementById(id);
   const cam = $('cam'), go = $('go'), stop = $('stop'), retry = $('retry'), msg = $('msg');
   let media, recorder, stream, mime, seq = 0, queue = Promise.resolve(), tick, ending = false;
@@ -103,27 +95,17 @@
     cam.srcObject = media;
     cam.play().catch(() => {});
     go.disabled = !canGoLive();
-    msg.textContent = 'Pressing Go live broadcasts immediately. There is no preview or undo.';
+    // Camera ready: no message for now (was "Pressing Go live broadcasts immediately. There is no
+    // preview or undo." — hidden at the owner's request, 2026-11-14).
+    msg.textContent = '';
   }
   retry.onclick = openCamera;
 
   // Who is going live. No login: the server gives this device a user (public UUID + private
-  // key) the first time a name is entered; the key stays in this browser. Broadcasts are tied
-  // to the UUID, so changing the name keeps the same profile.
-  const USER_KEY = 'live5:user';
-  let user = null;
-  try { user = JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch {}
-  let suggestedName = '';
-  try { suggestedName = localStorage.getItem('live5:name') || ''; } catch {} // from before user ids
-
-  const authHeaders = () => ({ 'content-type': 'application/json', 'x-user-id': user.id, 'x-user-secret': user.secret });
-  function rememberUser(u) {
-    user = u;
-    try {
-      if (u) localStorage.setItem(USER_KEY, JSON.stringify(u)); else localStorage.removeItem(USER_KEY);
-      localStorage.removeItem('live5:name');
-    } catch {}
-  }
+  // key) the first time a name is entered; the key stays in this browser (see me.js). Broadcasts
+  // are tied to the UUID, so changing the name keeps the same profile.
+  let user = getUser();
+  const authHeaders = () => headersFor(user);
 
   // Daily limit, as reported by the server (it enforces the limit; this only explains it).
   let usage = null, quotaTimer = null;
@@ -159,73 +141,45 @@
     if (r && r.ok) takeUsage(await r.json());
   }
 
-  function showStudio() {
-    $('who').hidden = true;
-    $('studio').hidden = false;
-    $('as').innerHTML = '';
+  // "Going live as Name · change name · your profile" (nothing until there's a user).
+  function renderAs() {
+    const as = $('as');
+    as.replaceChildren();
+    if (!user) return;
     const b = document.createElement('strong');
     b.textContent = user.name;
     const change = document.createElement('a');
     change.href = '#';
     change.textContent = 'change name';
-    change.onclick = (e) => { e.preventDefault(); if (!recorder) showWho(); };
+    change.onclick = async (e) => {
+      e.preventDefault();
+      if (recorder) return;
+      const updated = await askName({
+        title: 'Change your name', initial: user.name, action: 'Save',
+        note: 'Shown on your lives and comments.',
+        onSubmit: (name) => renameUser(user, name),
+      });
+      if (updated) { user = updated; renderAs(); refreshUsage(); }
+    };
     const profile = document.createElement('a');
     profile.href = `/u/${user.id}`;
     profile.textContent = 'your profile';
-    $('as').append('Going live as ', b, ' · ', change, ' · ', profile);
-    if (!media) openCamera();
-  }
-  function showWho(note) {
-    $('studio').hidden = true;
-    $('who').hidden = false;
-    $('name').value = user ? user.name : suggestedName;
-    $('who-msg').textContent = note || 'Shown to everyone who watches. No account needed.';
-    $('name').focus();
+    as.append('Going live as ', b, ' · ', change, ' · ', profile);
   }
 
-  $('who').onsubmit = async (e) => {
-    e.preventDefault();
-    const value = $('name').value.replace(/\s+/g, ' ').trim();
-    if (!value) { $('name').focus(); return; }
-    $('who-submit').disabled = true;
-    try {
-      let r;
-      if (user) {
-        r = await fetch('/api/users/me', { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ name: value }) });
-        if (r.status === 401) rememberUser(null); // this server doesn't know us any more
-      }
-      if (!user) {
-        r = await fetch('/api/users', {
-          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: value }),
-        });
-      }
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) { $('who-msg').textContent = body.error || 'Could not save your name. Try again.'; return; }
-      rememberUser({ id: body.id, name: body.name, secret: body.secret || user.secret });
-      takeUsage(body);
-      showStudio();
-    } catch {
-      $('who-msg').textContent = 'Could not reach the server. Try again.';
-    } finally {
-      $('who-submit').disabled = false;
-    }
-  };
-
+  // The camera starts right away for everyone; the name is only asked for when going live.
+  openCamera();
   (async () => {
-    if (!user) return showWho();
+    if (!user) return;
     // Make sure this server still knows this device's user (e.g. after its data was reset).
     const r = await fetch('/api/users/me', { headers: authHeaders() }).catch(() => null);
-    if (r && r.status === 401) {
-      suggestedName = user.name;
-      rememberUser(null);
-      return showWho('Welcome back. Enter your name to start a new profile.');
-    }
+    if (r && r.status === 401) { clearUser(); user = null; renderAs(); return; }
     if (r && r.ok) {
       const me = await r.json();
-      rememberUser({ ...user, name: me.name });
+      user = { ...user, name: me.name };
       takeUsage(me);
     }
-    showStudio();
+    renderAs();
   })();
 
   function send(blob) {
@@ -264,6 +218,16 @@
   go.onclick = async () => {
     if (!canGoLive()) return;
     go.disabled = true;
+    // First time: ask for a name in a popup over the camera, then go live straight away.
+    if (!user) {
+      user = await ensureUser({
+        title: 'Your name before you go live',
+        note: 'Shown to everyone who watches. No account needed.',
+        action: 'Go live',
+      });
+      if (!user) { go.disabled = false; return; } // cancelled
+      renderAs();
+    }
     try {
       // A key frame every second: Chrome cuts MP4 pieces at key frames, so without this Android
       // sends ~6-second pieces and live viewers wait that long. Browsers that don't know the
@@ -302,8 +266,18 @@
     $('badge').textContent = 'LIVE'; $('badge').classList.add('on');
     $('timer').hidden = false;
     const link = `${location.origin}/watch/${stream.id}`;
+    // Share your own live (or, after it ends, the replay): share sheet or copy link.
+    const shareBtn = document.createElement('button');
+    shareBtn.type = 'button';
+    shareBtn.className = 'btn share-live';
+    shareBtn.append(shareIcon(), ' Share');
+    shareBtn.onclick = () => shareStream({ ...stream, name: user.name, status: ending ? 'ended' : 'live' });
+    const linkEl = document.createElement('a');
+    linkEl.href = link;
+    linkEl.target = '_blank';
+    linkEl.textContent = link;
+    $('share').replaceChildren(shareBtn, linkEl);
     $('share').hidden = false;
-    $('share').innerHTML = `Share: <a href="${link}" target="_blank">${link}</a>`;
     msg.textContent = `You're live. Ends automatically after ${stream.maxSeconds}s.`;
     tick = setInterval(() => {
       const left = Math.max(0, limit - (Date.now() - started));

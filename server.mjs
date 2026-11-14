@@ -14,12 +14,12 @@ const EXT = { 'video/webm': 'webm', 'video/mp4': 'mp4' };
 const STATIC = {
   '/': ['index.html', 'text/html'],
   '/go': ['go.html', 'text/html'],
-  '/app.css': ['app.css', 'text/css'],
-  '/feed.js': ['feed.js', 'text/javascript'],
-  '/welcome.js': ['welcome.js', 'text/javascript'],
-  '/me.js': ['me.js', 'text/javascript'],
-  '/comments.js': ['comments.js', 'text/javascript'],
 };
+// Scripts and styles: any top-level public/<name>.js or .css, looked up when requested, so a new
+// file works without restarting the server. The pattern allows no slashes or extra dots, so
+// nothing outside public/ can be reached.
+const ASSET = /^\/([a-z0-9][a-z0-9-]*)\.(js|css)$/i;
+const ASSET_TYPES = { js: 'text/javascript', css: 'text/css' };
 const MAX_POSTER_BYTES = 300 * 1024;
 const FINAL_PIECE_GRACE = 3; // seconds
 const clampInt = (v, min, max, fallback) => {
@@ -304,10 +304,15 @@ export function createApp({
     const parts = url.pathname.split('/').filter(Boolean);
 
     if (req.method === 'GET' && STATIC[url.pathname]) {
-      const [file, type] = STATIC[url.pathname];
-      if (type === 'text/html') return sendPage(req, res, file, { kind: 'home' });
-      res.writeHead(200, { 'content-type': `${type}; charset=utf-8` });
-      return res.end(await readFile(path.join(PUBLIC_DIR, file)));
+      return sendPage(req, res, STATIC[url.pathname][0], { kind: 'home' });
+    }
+    const asset = req.method === 'GET' && ASSET.exec(url.pathname);
+    if (asset) {
+      let body;
+      try { body = await readFile(path.join(PUBLIC_DIR, `${asset[1]}.${asset[2]}`)); }
+      catch { return json(res, 404, { error: 'not found' }); }
+      res.writeHead(200, { 'content-type': `${ASSET_TYPES[asset[2].toLowerCase()]}; charset=utf-8`, 'cache-control': 'no-cache' });
+      return res.end(body);
     }
     if (req.method === 'GET' && PAGES[parts[0]] && parts.length === 2) {
       return sendPage(req, res, PAGES[parts[0]], { kind: parts[0], id: parts[1] });
