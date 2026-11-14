@@ -35,6 +35,22 @@ function setSound(on) {
   });
 }
 
+// Profile picture: a frame from the person's latest live, or their initial when there's none yet.
+export function avatarNode(url, name, cls = 'avatar') {
+  const initial = () => {
+    const d = el('span', cls, [...(name || '?')][0].toUpperCase());
+    d.setAttribute('aria-hidden', 'true');
+    return d;
+  };
+  if (!url) return initial();
+  const img = el('img', cls);
+  img.src = url;
+  img.alt = '';
+  img.decoding = 'async';
+  img.onerror = () => img.replaceWith(initial());
+  return img;
+}
+
 function el(tag, cls, text) {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -46,6 +62,9 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
   const cards = [];
   const known = new Set();
   let next = 0, loading = false, active = -1;
+  // Auto-advance: when the broadcast on screen finishes, move on to the next one. If the viewer
+  // got here by scrolling back up, they want to watch this one, so it loops instead.
+  let advance = true;
 
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
@@ -75,10 +94,11 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
     top.append(badge);
 
     const info = el('div', 'card-info');
-    const name = el('a', 'card-name', s.name);
-    name.href = `/u/${s.userId}`;
+    const who = el('a', 'card-who');
+    who.href = `/u/${s.userId}`;
+    who.append(avatarNode(s.avatar, s.name, 'avatar sm'), el('span', 'card-name', s.name));
     const meta = el('div', 'card-meta');
-    info.append(name, meta);
+    info.append(who, meta);
 
     const sound = el('button', 'sound', soundOn ? '🔊' : '🔇');
     sound.type = 'button';
@@ -99,6 +119,7 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
       if (!soundOn) { setSound(true); video.play().catch(() => {}); return; }
       if (video.paused) video.play().catch(() => {}); else video.pause();
     };
+    video.onended = () => onEnded(card);
     video.ontimeupdate = () => {
       if (card.stream.status !== 'live' && video.duration && Number.isFinite(video.duration)) {
         bar.style.width = `${(video.currentTime / video.duration) * 100}%`;
@@ -136,7 +157,7 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
     if (type) {
       playLive(card, type, url);
     } else {
-      card.video.loop = s.status !== 'live';
+      card.video.loop = false; // onEnded decides: next broadcast, or play this one again
       card.video.preload = 'auto';
       card.video.src = url;
     }
@@ -204,8 +225,21 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
     v.play().catch(() => {});
   }
 
+  function onEnded(card) {
+    if (cards[active] !== card) return;
+    const following = cards[active + 1];
+    if (advance && following) {
+      following.node.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    if (advance && next != null) loadMore(); // more may be on the way; keep this one playing meanwhile
+    card.video.currentTime = 0;
+    card.video.play().catch(() => {});
+  }
+
   function setActive(i) {
     if (i < 0 || i === active) return;
+    if (active >= 0) advance = i > active; // scrolled back up → stay and loop; down (or auto) → keep advancing
     active = i;
     cards.forEach((card, j) => {
       const d = Math.abs(j - i);

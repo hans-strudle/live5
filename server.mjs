@@ -44,6 +44,25 @@ export function cleanName(raw) {
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+// Width and height of a JPEG, read from its frame header (SOF marker). null if not found.
+export function jpegSize(buf) {
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < buf.length) {
+    if (buf[i] !== 0xff) return null;
+    const marker = buf[i + 1];
+    if (marker === 0xff) { i++; continue; } // fill byte
+    if (marker === 0xd9 || marker === 0xda) return null; // end of image / start of scan
+    const len = buf.readUInt16BE(i + 2);
+    const isSof = marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker);
+    if (isSof) return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+    i += 2 + len;
+  }
+  return null;
+}
+
 function readJson(file, fallback) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return fallback; }
 }
@@ -129,11 +148,11 @@ export function createApp({
       let buf;
       try { buf = await readFile(videoFile(s)); } catch { buf = Buffer.alloc(0); }
       if (!isFragmentedMp4(buf)) {
-        if (!buf.length || !boxesHaveMedia(buf)) { s.empty = true; await saveStream(s); }
+        if (!buf.length || !boxesHaveMedia(buf)) { s.empty = true; avatars.delete(s.userId); await saveStream(s); }
         return;
       }
       const plain = defragmentMp4(buf);
-      if (!plain) { s.empty = true; await saveStream(s); return; }
+      if (!plain) { s.empty = true; avatars.delete(s.userId); await saveStream(s); return; }
       const name = `${s.id}.replay.mp4`;
       await writeFile(path.join(streamDir, `${name}.tmp`), plain);
       await rename(path.join(streamDir, `${name}.tmp`), path.join(streamDir, name));
@@ -174,12 +193,28 @@ export function createApp({
       endReason: s.endReason ?? null,
       durationMs: s.endedAt ? s.endedAt - s.startedAt : null,
       poster: s.hasPoster ? `/api/streams/${s.id}/poster` : null,
+      avatar: avatarOf(s.userId),
       maxSeconds,
       viewers: s.viewers.size,
     };
   }
 
-  const publicUser = (u) => ({ id: u.id, name: u.name, createdAt: u.createdAt });
+  // Profile picture: the preview frame of the person's latest live that has one (skipping
+  // recordings with no video). Cached per user; forgotten whenever a new frame arrives or a
+  // recording turns out empty.
+  const avatars = new Map(); // userId -> poster URL or null
+  function avatarOf(userId) {
+    if (!avatars.has(userId)) {
+      let latest = null;
+      for (const s of streams.values()) {
+        if (s.userId === userId && s.hasPoster && !s.empty && (!latest || s.startedAt > latest.startedAt)) latest = s;
+      }
+      avatars.set(userId, latest ? `/api/streams/${latest.id}/poster` : null);
+    }
+    return avatars.get(userId);
+  }
+
+  const publicUser = (u) => ({ id: u.id, name: u.name, createdAt: u.createdAt, avatar: avatarOf(u.id) });
 
   // Daily limit: at most maxPerDay lives started in any rolling 24 hours. Lives that recorded
   // no video don't count. nextAt is when the oldest counted live drops out of the window.
@@ -247,13 +282,15 @@ export function createApp({
 
     if (req.method === 'GET' && STATIC[url.pathname]) {
       const [file, type] = STATIC[url.pathname];
+      if (type === 'text/html') return sendPage(req, res, file, { kind: 'home' });
       res.writeHead(200, { 'content-type': `${type}; charset=utf-8` });
       return res.end(await readFile(path.join(PUBLIC_DIR, file)));
     }
     if (req.method === 'GET' && PAGES[parts[0]] && parts.length === 2) {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      return res.end(await readFile(path.join(PUBLIC_DIR, PAGES[parts[0]])));
+      return sendPage(req, res, PAGES[parts[0]], { kind: parts[0], id: parts[1] });
     }
+    // GET /oembed?url=<page url> — oEmbed for apps that look for it (title, author, thumbnail).
+    if (req.method === 'GET' && url.pathname === '/oembed') return sendOembed(req, res, url);
 
     // GET /api/config — the rules pages explain to people (e.g. the welcome popup).
     if (url.pathname === '/api/config' && req.method === 'GET') {
@@ -262,6 +299,124 @@ export function createApp({
     if (parts[0] === 'api' && parts[1] === 'users') return handleUsers(req, res, parts);
     if (parts[0] === 'api' && parts[1] === 'streams') return handleStreams(req, res, url, parts);
     return json(res, 404, { error: 'not found' });
+  }
+
+  // ---- link previews ----
+  // Chat apps and social sites don't run JavaScript, so each page is sent with its preview
+  // tags (Open Graph, Twitter card, oEmbed link) already filled in: who, what, and an image.
+  // Pages mark the spot with <!--META--> in their <head>.
+  function publicOrigin(req) {
+    if (process.env.LIVE5_PUBLIC_URL) return process.env.LIVE5_PUBLIC_URL.replace(/\/+$/, '');
+    const first = (v) => String(v ?? '').split(',')[0].trim();
+    let proto = first(req.headers['x-forwarded-proto']) || (tls ? 'https' : 'http');
+    if (proto !== 'https' && proto !== 'http') proto = 'https';
+    let host = first(req.headers['x-forwarded-host']) || first(req.headers.host);
+    if (!/^[a-z0-9.\-:[\]]{1,255}$/i.test(host)) host = 'localhost';
+    return `${proto}://${host}`;
+  }
+
+  const SITE_DESCRIPTION = `Live for ${maxSeconds} seconds. No edits, no uploads: whatever you say goes out to the world.`;
+
+  async function posterSize(s) {
+    if (!s.hasPoster) return null;
+    if (s.posterSize === undefined) {
+      s.posterSize = null;
+      try { s.posterSize = jpegSize(await readFile(posterFile(s))); } catch {}
+    }
+    return s.posterSize;
+  }
+  const latestWithPoster = (filter) => [...streams.values()]
+    .filter((s) => s.hasPoster && !s.empty && filter(s))
+    .sort((a, b) => b.startedAt - a.startedAt)[0] ?? null;
+
+  // Everything a preview needs, for the home page, a broadcast or a profile.
+  async function preview(kind, id) {
+    let info = { title: 'live5', description: SITE_DESCRIPTION, path: '/', image: null, type: 'website' };
+    if (kind === 'watch') {
+      const s = streams.get(id);
+      const u = s && users.get(s.userId);
+      if (s && !s.empty) {
+        const name = u?.name ?? 'Someone';
+        const secs = s.endedAt ? Math.max(1, Math.round((s.endedAt - s.startedAt) / 1000)) : null;
+        const day = new Date(s.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+        info = {
+          title: s.status === 'live' ? `${name} is live on live5` : `${name} on live5`,
+          description: s.status === 'live' ? 'Live right now. Catch it before it ends.' : `A ${secs ? `${secs}-second ` : ''}live from ${day}.`,
+          path: `/watch/${s.id}`, image: s.hasPoster ? s : null, type: 'video.other',
+          author: u && { name, path: `/u/${u.id}` },
+        };
+      }
+    } else if (kind === 'u') {
+      const u = users.get(id);
+      if (u) {
+        const count = [...streams.values()].filter((s) => s.userId === u.id && !s.empty).length;
+        info = {
+          title: `${u.name} on live5`,
+          description: `${count} ${count === 1 ? 'live' : 'lives'} on live5. ${SITE_DESCRIPTION}`,
+          path: `/u/${u.id}`, image: latestWithPoster((s) => s.userId === u.id), type: 'profile',
+          author: { name: u.name, path: `/u/${u.id}` },
+        };
+      }
+    } else {
+      info.image = latestWithPoster(() => true); // the newest live's frame for the home page
+    }
+    return info;
+  }
+
+  async function sendPage(req, res, file, { kind, id }) {
+    let html = (await readFile(path.join(PUBLIC_DIR, file))).toString('utf8');
+    const base = publicOrigin(req);
+    const p = await preview(kind, id);
+    const pageUrl = base + p.path;
+    const size = p.image ? await posterSize(p.image) : null;
+    const tags = [
+      ['property', 'og:site_name', 'live5'],
+      ['property', 'og:type', p.type],
+      ['property', 'og:title', p.title],
+      ['property', 'og:description', p.description],
+      ['property', 'og:url', pageUrl],
+      ['name', 'description', p.description],
+      ['name', 'twitter:card', p.image ? 'summary_large_image' : 'summary'],
+      ['name', 'twitter:title', p.title],
+      ['name', 'twitter:description', p.description],
+      ['name', 'theme-color', '#0d0d10'],
+    ];
+    if (p.image) {
+      const img = `${base}/api/streams/${p.image.id}/poster`;
+      tags.push(['property', 'og:image', img], ['property', 'og:image:type', 'image/jpeg'],
+        ['property', 'og:image:alt', p.title], ['name', 'twitter:image', img]);
+      if (size) tags.push(['property', 'og:image:width', String(size.width)], ['property', 'og:image:height', String(size.height)]);
+    }
+    const meta = tags.map(([attr, key, value]) => `<meta ${attr}="${key}" content="${escapeHtml(value)}">`);
+    meta.push(`<link rel="canonical" href="${escapeHtml(pageUrl)}">`);
+    if (kind === 'watch' || kind === 'u') {
+      meta.push(`<link rel="alternate" type="application/json+oembed" href="${escapeHtml(`${base}/oembed?format=json&url=${encodeURIComponent(pageUrl)}`)}" title="${escapeHtml(p.title)}">`);
+    }
+    html = html.replace('<!--META-->', meta.join('\n  '));
+    if (kind === 'watch' || kind === 'u') html = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(p.title)}</title>`);
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(html);
+  }
+
+  async function sendOembed(req, res, url) {
+    const format = url.searchParams.get('format') || 'json';
+    if (format !== 'json') return json(res, 501, { error: 'only json is supported' });
+    let target;
+    try { target = new URL(url.searchParams.get('url') || ''); } catch { return json(res, 404, { error: 'unknown url' }); }
+    const [kind, id, extra] = target.pathname.split('/').filter(Boolean);
+    if (!['watch', 'u'].includes(kind) || !id || extra) return json(res, 404, { error: 'unknown url' });
+    const p = await preview(kind, id);
+    if (p.path === '/') return json(res, 404, { error: 'unknown url' });
+    const base = publicOrigin(req);
+    const body = { version: '1.0', type: 'link', title: p.title, provider_name: 'live5', provider_url: `${base}/` };
+    if (p.author) Object.assign(body, { author_name: p.author.name, author_url: base + p.author.path });
+    const size = p.image ? await posterSize(p.image) : null;
+    if (p.image && size) {
+      Object.assign(body, {
+        thumbnail_url: `${base}/api/streams/${p.image.id}/poster`, thumbnail_width: size.width, thumbnail_height: size.height,
+      });
+    }
+    return json(res, 200, body);
   }
 
   async function handleUsers(req, res, parts) {
@@ -403,6 +558,7 @@ export function createApp({
         }
         await writeFile(posterFile(s), body);
         s.hasPoster = true;
+        avatars.delete(s.userId);
         await saveStream(s);
         return json(res, 200, { ok: true });
       } finally {

@@ -6,7 +6,9 @@
 - Going live is immediate. No preview/review/publish step between pressing *Go live* and viewers seeing it.
 - Broadcasts are short and hard-capped server-side (time and bytes), not just in the client. Current cap: 30 seconds per stream (owner decision, 2026-11-13; previously 5 s).
 - No logins. Each device gets a user with a public UUID and a private key (only the key's hash is stored server-side). Broadcasts are tied to the UUID, never to the display name. Names are free text: cleaned, at most 30 characters, changeable, not unique, and prove nothing about identity (owner decision, 2026-11-13).
-- Profiles (`/u/<uuid>`) list a user's broadcasts, live and past.
+- Profiles (`/u/<uuid>`) list a user's broadcasts, live and past, under a compact bar (no full-screen header).
+- Profile pictures are always the preview frame of the user's latest non-empty live; there's no picture picker.
+- Shared links must preview well: pages carry server-rendered Open Graph/Twitter tags (placeholder `<!--META-->` in each page's head), and `/oembed` answers for `/watch/:id` and `/u/:id`. Escape everything user-provided that goes into them.
 - The home page and profiles are a full-screen vertical feed, one broadcast per screen (`public/feed.js`).
 - The only non-video file the server accepts is the preview JPEG. It's grabbed from the live camera by `/go`, and the server accepts it only with the broadcast token, only while live, only once, up to 300 KB. It's a cover image, not an upload feature: there is no image picker.
 - Daily limit: each user can start at most 5 lives in any rolling 24 hours, enforced server-side (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).

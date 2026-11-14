@@ -29,9 +29,13 @@ header { display: flex; align-items: center; justify-content: space-between; mar
   background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
 .list a { text-decoration: none; }
 .list a:hover { text-decoration: underline; }
-.avatar { flex: none; width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--live); color: var(--live-fg); font-size: 40px; font-weight: 800; }
-.avatar.is-live { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--live); }
+/* Profile pictures: a frame from the person's latest live (img), or their initial (span). */
+.avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--live); color: var(--live-fg); font-size: 18px; font-weight: 800; object-fit: cover; }
+img.avatar { background: #222; }
+.avatar.sm { width: 36px; height: 36px; font-size: 16px; border: 2px solid rgba(255,255,255,.85); }
+.avatar.md { width: 44px; height: 44px; font-size: 20px; }
+.avatar.is-live { box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--live); }
 
 /* ---------- feed: one broadcast per screen, snap scrolling ---------- */
 .feed-page { height: 100dvh; overflow: hidden; }
@@ -46,9 +50,10 @@ header { display: flex; align-items: center; justify-content: space-between; mar
 .card-top .badge { position: static; display: inline-block; }
 .card-info { position: absolute; left: 0; right: 0; bottom: 0; padding: 64px 72px calc(28px + env(safe-area-inset-bottom)) 16px;
   background: linear-gradient(transparent, rgba(0,0,0,.7)); pointer-events: none; }
-.card-name { pointer-events: auto; font-weight: 800; font-size: 18px; text-decoration: none; overflow-wrap: anywhere;
-  text-shadow: 0 1px 3px rgba(0,0,0,.5); }
-.card-name:hover { text-decoration: underline; }
+.card-who { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; max-width: 100%; }
+.card-name { font-weight: 800; font-size: 18px; overflow-wrap: anywhere; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.card-who:hover .card-name { text-decoration: underline; }
+.card-meta { margin-left: 46px; }
 .card-meta { color: rgba(255,255,255,.8); font-size: 14px; margin-top: 2px; }
 .sound { position: absolute; right: 12px; bottom: calc(28px + env(safe-area-inset-bottom)); width: 44px; height: 44px;
   border-radius: 50%; border: 0; background: rgba(0,0,0,.5); color: #fff; font-size: 20px; cursor: pointer; }
@@ -72,12 +77,17 @@ header { display: flex; align-items: center; justify-content: space-between; mar
   border: 0; border-radius: 999px; padding: 8px 16px; background: var(--live); color: var(--live-fg); font: inherit;
   font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
 
-.profile-head { min-height: 55dvh; scroll-snap-align: start; display: grid; place-content: center; justify-items: center;
-  gap: 4px; padding: calc(96px + env(safe-area-inset-top)) 16px 32px; text-align: center; }
-.profile-head h1 { margin: 12px 0 0; font-size: 28px; overflow-wrap: anywhere; }
-.profile-head p { margin: 4px 0 0; }
-.you { color: var(--live); font-weight: 700; }
-.scroll-hint { margin-top: 24px !important; color: var(--muted); }
+/* Compact profile bar, floating under the header on profile pages. */
+.profile-bar { position: fixed; z-index: 9; top: calc(60px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  width: calc(min(100vw, 100dvh * 9 / 16) - 24px); display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 8px;
+  border-radius: 999px; background: rgba(0,0,0,.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+@media (max-width: 600px) { .profile-bar { width: calc(100vw - 24px); } }
+.profile-text { min-width: 0; flex: 1; }
+.profile-bar h1 { margin: 0; font-size: 16px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-bar p { margin: 2px 0 0; font-size: 13px; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip { flex: none; padding: 3px 10px; border-radius: 999px; background: var(--live); color: var(--live-fg); font-size: 12px; font-weight: 700; }
+.has-profile-bar .card-top { top: calc(128px + env(safe-area-inset-top)); }
+.has-profile-bar .pill { top: calc(132px + env(safe-area-inset-top)); }
 .who-line a { text-decoration: none; }
 .who-line a:hover { text-decoration: underline; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 8px; }
