@@ -12,13 +12,15 @@
 - The home page and profiles are a full-screen vertical feed, one broadcast per screen (`public/feed.js`).
 - No separate watch page: a shared link (`/watch/<id>`) serves the main feed with that broadcast first, then the rest of the feed auto-plays (owner decision, 2026-11-14). The server still fills in that link's preview tags.
 - The only non-video file the server accepts is the preview JPEG. It's grabbed from the live camera by `/go`, and the server accepts it only with the broadcast token, only while live, only once, up to 300 KB. It's a cover image, not an upload feature: there is no image picker.
-- Daily limit: each user can start at most 5 lives in any rolling 24 hours, enforced server-side (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
+- Daily limit: each user can go live once per rolling 12 hours (default `maxPerDay` 1 per `limitHours` 12; was 5 per 24 hours), enforced server-side; the Go live button shows a lock with a countdown until then (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
 - First visit shows a welcome popup explaining the rules (`public/welcome.js`, once per device).
 - Comments are simple: plain text, one line, at most 200 characters, append-only (no editing or deleting), one every 3 seconds per user, tied to the user's UUID like broadcasts (owner request, 2026-11-14).
 - Likes are private: anyone can like (anonymous per-device viewer id, no name needed), but like counts are never shown to viewers or broadcasters and never returned by the API (owner request, 2026-11-14).
 - Going live is announced: an in-feed banner (5-second checks) and opt-in Web Push "X just went live" notifications to all subscribed devices except the broadcaster's own (owner request, 2026-11-14). There's no following yet, so alerts cover everyone.
 - Web Push stays dependency-free (`push.mjs`): only send to known push-service hosts (prevents the server being used to POST to arbitrary URLs).
 - No editing: no trimming, replacing, deleting or reordering chunks; chunks are accepted only in sequence, only while live, only with the broadcast token.
+
+- Web-only for now: no native, TestFlight or App Store app. iPhone users add live5 to the Home Screen, which also enables live alerts (owner decision, 2026-11-14). A public App Store release would first need reporting, blocking and content filtering (Apple guideline 1.2).
 
 ## Engineering
 

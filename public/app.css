@@ -247,6 +247,18 @@ img.avatar { background: #222; }
 .name-actions { display: flex; gap: 10px; }
 .name-actions .btn { flex: 1; }
 
+/* While live: keep the video clear. Only the badge/countdown on top and a slim End + share at
+   the bottom; everything else in the bottom area is hidden and the dark fade is lighter. */
+.studio.is-live .as, .studio.is-live .quota, .studio.is-live .studio-msg, .studio.is-live .share { display: none; }
+.studio.is-live .studio-bottom { padding-top: 24px; background: linear-gradient(transparent, rgba(0,0,0,.35)); }
+.studio.is-live .studio-top { background: linear-gradient(rgba(0,0,0,.35), transparent); }
+.studio.is-live .go-btn.end { min-width: 0; padding: 10px 28px; font-size: 16px; background: rgba(255,255,255,.92); }
+.live-share { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0,0,0,.45); color: #fff; cursor: pointer; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.live-share[hidden] { display: none; }
+/* After a live: a dimmer backdrop so the end panel reads clearly over the last frame. */
+.studio.is-ended .studio-bottom { background: linear-gradient(transparent, rgba(0,0,0,.8) 40%); }
+
 /* After a live: the frozen last frame (mirrored like the preview), then the replay (not mirrored). */
 .endframe { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .endframe[hidden] { display: none; }
@@ -268,6 +280,9 @@ img.avatar { background: #222; }
 .go-btn { min-width: 200px; padding: 16px 32px; font-size: 18px; box-shadow: 0 6px 24px rgba(255,45,85,.45); }
 .go-btn[disabled] { opacity: .55; box-shadow: none; }
 .go-btn.end { background: #fff; color: #000; box-shadow: none; }
+/* Locked until the next daily live: a quiet countdown instead of the red button. */
+.go-btn.locked, .go-btn.locked[disabled] { opacity: 1; background: rgba(255,255,255,.16); color: #fff; box-shadow: none;
+  font-variant-numeric: tabular-nums; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .who-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
 .who-line h1 { font-size: 20px; margin: 0; overflow-wrap: anywhere; }
 .name { overflow-wrap: anywhere; }

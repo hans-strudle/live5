@@ -33,6 +33,7 @@
     <div class="controls">
       <button class="btn go-btn" id="go" disabled>Go live</button>
       <button class="btn go-btn end" id="stop" hidden>End</button>
+      <button class="live-share" id="live-share" type="button" hidden aria-label="Share your live" title="Share your live"></button>
       <button class="btn ghost" id="retry" hidden>Try camera again</button>
     </div>
     <p class="quota" id="quota" hidden></p>
@@ -129,7 +130,7 @@
   let usage = null, quotaTimer = null;
   function takeUsage(body) {
     if (!body || typeof body.dailyLimit !== 'number') return;
-    usage = { dailyLimit: body.dailyLimit, leftToday: body.leftToday, nextAt: body.nextAt };
+    usage = { dailyLimit: body.dailyLimit, limitHours: body.limitHours ?? 12, leftToday: body.leftToday, nextAt: body.nextAt };
     renderQuota();
   }
   const canGoLive = () => !usage || usage.leftToday > 0;
@@ -138,18 +139,54 @@
     const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     return d.toDateString() === new Date().toDateString() ? `at ${time}` : `tomorrow at ${time}`;
   }
+  // "13h 22m", "4m 05s", "12s"
+  function untilText(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m ${String(sec).padStart(2, '0')}s`;
+    return `${sec}s`;
+  }
+
+  // While locked, the Go live button itself counts down to the next live.
+  let lockTick = null;
+  function renderLockedButton() {
+    if (recorder || !usage || usage.leftToday > 0 || !usage.nextAt) return;
+    go.textContent = `🔒 Next live in ${untilText(usage.nextAt - Date.now())}`;
+  }
+
   function renderQuota() {
     const q = $('quota');
     clearTimeout(quotaTimer);
+    clearInterval(lockTick);
     if (!usage) { q.hidden = true; return; }
     q.hidden = false;
     const out = usage.leftToday === 0;
+    const one = usage.dailyLimit === 1;
     q.classList.toggle('out', out);
-    q.textContent = out
-      ? `You've used all ${usage.dailyLimit} lives for today.${usage.nextAt ? ` Your next one is available ${whenText(usage.nextAt)}.` : ''}`
-      : `${usage.leftToday} of ${usage.dailyLimit} lives left today`;
-    if (!recorder && media) go.disabled = out;
-    // When a slot frees up, ask the server again so the button comes back on its own.
+    const hours = usage.limitHours;
+    if (out) {
+      const when = usage.nextAt ? whenText(usage.nextAt) : null;
+      q.textContent = one
+        ? `You've had your live.${when ? ` Your next one unlocks ${when}.` : ''}`
+        : `You've used all ${usage.dailyLimit} lives for now.${when ? ` Your next one is available ${when}.` : ''}`;
+    } else {
+      q.textContent = one
+        ? `One live every ${hours} hours. Make it count.`
+        : `${usage.leftToday} of ${usage.dailyLimit} lives left (per ${hours} hours)`;
+    }
+    if (!recorder) {
+      go.classList.toggle('locked', out);
+      if (out) {
+        go.disabled = true;
+        renderLockedButton();
+        lockTick = setInterval(renderLockedButton, 1000);
+      } else {
+        go.textContent = 'Go live';
+        if (media) go.disabled = false;
+      }
+    }
+    // When the lock ends, ask the server again so the button comes back on its own.
     if (out && usage.nextAt && !recorder) {
       quotaTimer = setTimeout(refreshUsage, Math.max(1000, usage.nextAt - Date.now() + 1000));
     }
@@ -243,6 +280,10 @@
     $('badge').classList.remove('on');
     $('timer').hidden = true;
     stop.hidden = true;
+    $('live-share').hidden = true;
+    // Back to the full screen: the end panel, plus when the next live unlocks.
+    $('studio').classList.remove('is-live');
+    $('studio').classList.add('is-ended');
     if (!stream) { // never went live (e.g. couldn't start): just say so
       msg.innerHTML = `${text} <a href="/go">Try again</a>`;
       return;
@@ -331,23 +372,17 @@
 
     startedAt = Date.now();
     const started = startedAt, limit = stream.maxSeconds * 1000;
+    // While live, keep the screen clear: just the badge and countdown on top, and a slim End
+    // button with a small share icon at the bottom (CSS hides the rest under .is-live).
+    $('studio').classList.add('is-live');
     go.hidden = true; stop.hidden = false;
     $('badge').textContent = 'LIVE'; $('badge').classList.add('on');
     $('timer').hidden = false;
-    const link = `${location.origin}/watch/${stream.id}`;
-    // Share your own live (or, after it ends, the replay): share sheet or copy link.
-    const shareBtn = document.createElement('button');
-    shareBtn.type = 'button';
-    shareBtn.className = 'btn share-live';
-    shareBtn.append(shareIcon(), ' Share');
-    shareBtn.onclick = () => shareStream({ ...stream, name: user.name, status: ending ? 'ended' : 'live' });
-    const linkEl = document.createElement('a');
-    linkEl.href = link;
-    linkEl.target = '_blank';
-    linkEl.textContent = link;
-    $('share').replaceChildren(shareBtn, linkEl);
-    $('share').hidden = false;
-    msg.textContent = `You're live. Ends automatically after ${stream.maxSeconds}s.`;
+    const liveShare = $('live-share');
+    liveShare.replaceChildren(shareIcon());
+    liveShare.onclick = () => shareStream({ ...stream, name: user.name, status: 'live' });
+    liveShare.hidden = false;
+    msg.textContent = '';
     tick = setInterval(() => {
       const left = Math.max(0, limit - (Date.now() - started));
       $('timer').textContent = `${Math.ceil(left / 1000)}s`;

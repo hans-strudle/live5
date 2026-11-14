@@ -12,7 +12,7 @@
     <ul>
       <li><strong><span data-seconds>30</span> seconds</strong> per live, then it ends.</li>
       <li><strong>No previews, no edits, no uploads.</strong> Whatever you say goes out to the world.</li>
-      <li><strong><span data-per-day>5</span> lives a day.</strong></li>
+      <li><strong data-per-day>One live every 12 hours.</strong> Then it locks until your next one.</li>
     </ul>
     <button class="btn" type="button" autofocus>Got it</button>`;
 
@@ -35,6 +35,8 @@
   // Fill in the server's actual limits (the defaults above are shown until then).
   fetch('/api/config').then((r) => r.json()).then((c) => {
     if (c.maxSeconds) dialog.querySelector('[data-seconds]').textContent = c.maxSeconds;
-    if (c.maxPerDay) dialog.querySelector('[data-per-day]').textContent = c.maxPerDay;
+    const hours = c.limitHours || 12;
+    dialog.querySelector('[data-per-day]').textContent = c.maxPerDay > 1
+      ? `${c.maxPerDay} lives every ${hours} hours.` : `One live every ${hours} hours.`;
   }).catch(() => {});
 })();

@@ -91,6 +91,22 @@ test('going live needs a user and a video type; one live at a time; live comes f
   assert.equal(feed.items[0].token, undefined, 'the broadcast token never leaks');
 });
 
+test('one live every 12 hours by default: locked until 12 hours after going live', async (t) => {
+  const app = await start(t);
+  const u = await newUser(app.base);
+  const { body: s } = await goLive(app.base, u);
+  await chunk(app.base, s, 0, 'x');
+  await end(app.base, s);
+  const { status, body } = await goLive(app.base, u);
+  assert.equal(status, 429);
+  assert.equal(body.dailyLimit, 1);
+  assert.ok(Math.abs(body.nextAt - (s.startedAt + 12 * 3600 * 1000)) < 1000, 'unlocks 12h after that live started');
+  assert.equal(body.limitHours, 12);
+  const me = await (await fetch(`${app.base}/api/users/me`, { headers: auth(u) })).json();
+  assert.equal(me.leftToday, 0);
+  assert.equal((await getJson(app.base, '/api/config')).maxPerDay, 1);
+});
+
 test('daily limit: refused after the limit, with when the next live frees up', async (t) => {
   const app = await start(t, { maxPerDay: 2 });
   const u = await newUser(app.base);
@@ -157,7 +173,7 @@ test('finished replays: full file, byte ranges (for Safari), and cacheable', asy
 });
 
 test('the server enforces the time limit and the size limit', async (t) => {
-  const app = await start(t, { maxSeconds: 0.2, finalPieceGrace: 0, maxBytes: 4 });
+  const app = await start(t, { maxSeconds: 0.2, finalPieceGrace: 0, maxBytes: 4, maxPerDay: 5 });
   const u = await newUser(app.base);
   const { body: s1 } = await goLive(app.base, u);
   await new Promise((r) => setTimeout(r, 300));

@@ -86,7 +86,8 @@ export function createApp({
   maxBytes = 10 * 1024 * 1024,
   maxChunkBytes = 4 * 1024 * 1024,
   idleSeconds = 10,
-  maxPerDay = Number(process.env.LIVE5_MAX_PER_DAY) || 5,
+  maxPerDay = Number(process.env.LIVE5_MAX_PER_DAY) || 1, // lives allowed per window (below)
+  limitHours = Number(process.env.LIVE5_LIMIT_HOURS) || 12, // the rolling window: one live every 12 hours
   finalPieceGrace = FINAL_PIECE_GRACE,
   dataDir = process.env.LIVE5_DATA_DIR || path.join(ROOT, 'data'),
   tls = null,
@@ -305,20 +306,22 @@ export function createApp({
 
   const publicUser = (u) => ({ id: u.id, name: u.name, createdAt: u.createdAt, avatar: avatarOf(u.id) });
 
-  // Daily limit: at most maxPerDay lives started in any rolling 24 hours. Lives that recorded
-  // no video don't count. nextAt is when the oldest counted live drops out of the window.
-  const DAY_MS = 24 * 60 * 60 * 1000;
+  // Live limit: at most maxPerDay lives started in any rolling window of limitHours (default:
+  // one live every 12 hours). Lives that recorded no video don't count. nextAt is when the oldest
+  // counted live drops out of the window. (Field names say "day"/"today" for history.)
+  const WINDOW_MS = limitHours * 60 * 60 * 1000;
   function dailyUsage(u, now = Date.now()) {
     const recent = [...streams.values()]
-      .filter((s) => s.userId === u.id && !s.empty && s.startedAt > now - DAY_MS)
+      .filter((s) => s.userId === u.id && !s.empty && s.startedAt > now - WINDOW_MS)
       .map((s) => s.startedAt)
       .sort((a, b) => a - b);
     const leftToday = Math.max(0, maxPerDay - recent.length);
     return {
       dailyLimit: maxPerDay,
+      limitHours,
       usedToday: recent.length,
       leftToday,
-      nextAt: leftToday ? null : recent[recent.length - maxPerDay] + DAY_MS,
+      nextAt: leftToday ? null : recent[recent.length - maxPerDay] + WINDOW_MS,
     };
   }
   // What a user sees about themselves (never shown on public profiles).
@@ -388,7 +391,7 @@ export function createApp({
 
     // GET /api/config — the rules pages explain to people (e.g. the welcome popup).
     if (url.pathname === '/api/config' && req.method === 'GET') {
-      return json(res, 200, { maxSeconds, maxPerDay });
+      return json(res, 200, { maxSeconds, maxPerDay, limitHours });
     }
     // Web Push: GET /api/push/key (the server's public key for subscribing),
     // POST /api/push/subscribe { endpoint, keys } (user headers optional), POST /api/push/unsubscribe { endpoint }.
@@ -590,7 +593,8 @@ export function createApp({
       }
       const usage = dailyUsage(u);
       if (!usage.leftToday) {
-        return json(res, 429, { error: `you've used all ${maxPerDay} lives for today`, ...usage });
+        const lives = maxPerDay === 1 ? 'your live' : `all ${maxPerDay} lives`;
+        return json(res, 429, { error: `you've had ${lives} for the last ${limitHours} hours`, ...usage });
       }
       const s = {
         id: randomBytes(6).toString('base64url'), userId: u.id, type, ext: EXT[base],
