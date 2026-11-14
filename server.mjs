@@ -16,6 +16,7 @@ const STATIC = {
   '/go': ['go.html', 'text/html'],
   '/app.css': ['app.css', 'text/css'],
   '/feed.js': ['feed.js', 'text/javascript'],
+  '/welcome.js': ['welcome.js', 'text/javascript'],
 };
 const MAX_POSTER_BYTES = 300 * 1024;
 const FINAL_PIECE_GRACE = 3; // seconds
@@ -52,6 +53,7 @@ export function createApp({
   maxBytes = 10 * 1024 * 1024,
   maxChunkBytes = 4 * 1024 * 1024,
   idleSeconds = 10,
+  maxPerDay = Number(process.env.LIVE5_MAX_PER_DAY) || 5,
   dataDir = process.env.LIVE5_DATA_DIR || path.join(ROOT, 'data'),
   tls = null,
 } = {}) {
@@ -179,6 +181,25 @@ export function createApp({
 
   const publicUser = (u) => ({ id: u.id, name: u.name, createdAt: u.createdAt });
 
+  // Daily limit: at most maxPerDay lives started in any rolling 24 hours. Lives that recorded
+  // no video don't count. nextAt is when the oldest counted live drops out of the window.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  function dailyUsage(u, now = Date.now()) {
+    const recent = [...streams.values()]
+      .filter((s) => s.userId === u.id && !s.empty && s.startedAt > now - DAY_MS)
+      .map((s) => s.startedAt)
+      .sort((a, b) => a - b);
+    const leftToday = Math.max(0, maxPerDay - recent.length);
+    return {
+      dailyLimit: maxPerDay,
+      usedToday: recent.length,
+      leftToday,
+      nextAt: leftToday ? null : recent[recent.length - maxPerDay] + DAY_MS,
+    };
+  }
+  // What a user sees about themselves (never shown on public profiles).
+  const selfView = (u) => ({ ...publicUser(u), ...dailyUsage(u) });
+
   // ---- http helpers ----
   function json(res, code, body) {
     res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -234,6 +255,10 @@ export function createApp({
       return res.end(await readFile(path.join(PUBLIC_DIR, PAGES[parts[0]])));
     }
 
+    // GET /api/config — the rules pages explain to people (e.g. the welcome popup).
+    if (url.pathname === '/api/config' && req.method === 'GET') {
+      return json(res, 200, { maxSeconds, maxPerDay });
+    }
     if (parts[0] === 'api' && parts[1] === 'users') return handleUsers(req, res, parts);
     if (parts[0] === 'api' && parts[1] === 'streams') return handleStreams(req, res, url, parts);
     return json(res, 404, { error: 'not found' });
@@ -250,7 +275,7 @@ export function createApp({
       const u = { id: randomUUID(), name, secretHash: sha256(secret), createdAt: Date.now() };
       users.set(u.id, u);
       await saveUsers();
-      return json(res, 201, { ...publicUser(u), secret });
+      return json(res, 201, { ...selfView(u), secret });
     }
 
     // GET /api/users/me — check this device's identity is still known.
@@ -258,14 +283,14 @@ export function createApp({
     if (parts[2] === 'me' && parts.length === 3) {
       const u = currentUser(req);
       if (!u) return json(res, 401, { error: 'unknown user' });
-      if (req.method === 'GET') return json(res, 200, publicUser(u));
+      if (req.method === 'GET') return json(res, 200, selfView(u));
       if (req.method === 'PATCH') {
         const body = await readJsonBody(req);
         const name = cleanName(body?.name);
         if (!name) return json(res, 400, { error: `enter a name (1–${MAX_NAME} characters)` });
         u.name = name;
         await saveUsers();
-        return json(res, 200, publicUser(u));
+        return json(res, 200, selfView(u));
       }
       return json(res, 405, { error: 'method not allowed' });
     }
@@ -297,6 +322,10 @@ export function createApp({
       for (const other of streams.values()) {
         if (other.userId === u.id && other.status === 'live') return json(res, 409, { error: 'you are already live' });
       }
+      const usage = dailyUsage(u);
+      if (!usage.leftToday) {
+        return json(res, 429, { error: `you've used all ${maxPerDay} lives for today`, ...usage });
+      }
       const s = {
         id: randomBytes(6).toString('base64url'), userId: u.id, type, ext: EXT[base],
         status: 'live', startedAt: Date.now(), bytes: 0,
@@ -308,7 +337,7 @@ export function createApp({
       touch(s);
       streams.set(s.id, s);
       await saveStream(s);
-      return json(res, 201, { ...publicStream(s), token: s.token });
+      return json(res, 201, { ...publicStream(s), token: s.token, ...dailyUsage(u) });
     }
 
     // GET /api/streams?user=<uuid>&status=live&offset=0&limit=10 — the feed: live first, then

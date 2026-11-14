@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Go live · live5</title>
   <link rel="stylesheet" href="/app.css">
+  <script src="/welcome.js" defer></script>
 </head>
 <body>
 <main>
@@ -31,6 +32,7 @@
     <button class="btn ghost" id="stop" hidden>End</button>
     <button class="btn ghost" id="retry" hidden>Try camera again</button>
   </div>
+  <p class="quota" id="quota" hidden></p>
   <p class="muted" id="msg" style="text-align:center">Starting camera…</p>
   <p class="share" id="share" hidden style="text-align:center"></p>
   </div>
@@ -94,7 +96,7 @@
     if (!mime) { msg.textContent = 'This browser cannot record video in a supported format.'; return; }
     cam.srcObject = media;
     cam.play().catch(() => {});
-    go.disabled = false;
+    go.disabled = !canGoLive();
     msg.textContent = 'Pressing Go live broadcasts immediately. There is no preview or undo.';
   }
   retry.onclick = openCamera;
@@ -115,6 +117,40 @@
       if (u) localStorage.setItem(USER_KEY, JSON.stringify(u)); else localStorage.removeItem(USER_KEY);
       localStorage.removeItem('live5:name');
     } catch {}
+  }
+
+  // Daily limit, as reported by the server (it enforces the limit; this only explains it).
+  let usage = null, quotaTimer = null;
+  function takeUsage(body) {
+    if (!body || typeof body.dailyLimit !== 'number') return;
+    usage = { dailyLimit: body.dailyLimit, leftToday: body.leftToday, nextAt: body.nextAt };
+    renderQuota();
+  }
+  const canGoLive = () => !usage || usage.leftToday > 0;
+  function whenText(t) {
+    const d = new Date(t);
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return d.toDateString() === new Date().toDateString() ? `at ${time}` : `tomorrow at ${time}`;
+  }
+  function renderQuota() {
+    const q = $('quota');
+    clearTimeout(quotaTimer);
+    if (!usage) { q.hidden = true; return; }
+    q.hidden = false;
+    const out = usage.leftToday === 0;
+    q.classList.toggle('out', out);
+    q.textContent = out
+      ? `You've used all ${usage.dailyLimit} lives for today.${usage.nextAt ? ` Your next one is available ${whenText(usage.nextAt)}.` : ''}`
+      : `${usage.leftToday} of ${usage.dailyLimit} lives left today`;
+    if (!recorder && media) go.disabled = out;
+    // When a slot frees up, ask the server again so the button comes back on its own.
+    if (out && usage.nextAt && !recorder) {
+      quotaTimer = setTimeout(refreshUsage, Math.max(1000, usage.nextAt - Date.now() + 1000));
+    }
+  }
+  async function refreshUsage() {
+    const r = await fetch('/api/users/me', { headers: authHeaders() }).catch(() => null);
+    if (r && r.ok) takeUsage(await r.json());
   }
 
   function showStudio() {
@@ -160,6 +196,7 @@
       const body = await r.json().catch(() => ({}));
       if (!r.ok) { $('who-msg').textContent = body.error || 'Could not save your name. Try again.'; return; }
       rememberUser({ id: body.id, name: body.name, secret: body.secret || user.secret });
+      takeUsage(body);
       showStudio();
     } catch {
       $('who-msg').textContent = 'Could not reach the server. Try again.';
@@ -177,7 +214,11 @@
       rememberUser(null);
       return showWho('Welcome back. Enter your name to start a new profile.');
     }
-    if (r && r.ok) rememberUser({ ...user, name: (await r.json()).name });
+    if (r && r.ok) {
+      const me = await r.json();
+      rememberUser({ ...user, name: me.name });
+      takeUsage(me);
+    }
     showStudio();
   })();
 
@@ -215,6 +256,7 @@
   }
 
   go.onclick = async () => {
+    if (!canGoLive()) return;
     go.disabled = true;
     try {
       // A key frame every second: Chrome cuts MP4 pieces at key frames, so without this Android
@@ -240,10 +282,12 @@
     }).catch(() => null);
     if (!r || !r.ok) {
       const err = r && (await r.json().catch(() => null));
+      takeUsage(err); // a 429 carries the current usage and when the next live frees up
       finish(`Could not go live${err && err.error ? `: ${err.error}` : ''}.`);
       return;
     }
     stream = await r.json();
+    takeUsage(stream);
     created();
     setTimeout(() => sendPreview().catch(() => {}), 800);
 

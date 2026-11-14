@@ -9,6 +9,8 @@
 - Profiles (`/u/<uuid>`) list a user's broadcasts, live and past.
 - The home page and profiles are a full-screen vertical feed, one broadcast per screen (`public/feed.js`).
 - The only non-video file the server accepts is the preview JPEG. It's grabbed from the live camera by `/go`, and the server accepts it only with the broadcast token, only while live, only once, up to 300 KB. It's a cover image, not an upload feature: there is no image picker.
+- Daily limit: each user can start at most 5 lives in any rolling 24 hours, enforced server-side (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
+- First visit shows a welcome popup explaining the rules (`public/welcome.js`, once per device).
 - No editing: no trimming, replacing, deleting or reordering chunks; chunks are accepted only in sequence, only while live, only with the broadcast token.
 
 ## Engineering
@@ -29,5 +31,5 @@
 - Moderation, reporting and impersonation handling (anyone can type any name) before any public use.
 - Scaling: storage is local files in `data/`, served by a single process. Nothing is ever deleted (no retention limit).
 - Recovering a profile on a new device or after clearing browser data.
-- Rate limits on creating users and broadcasts.
+- Rate limits on creating users (and per IP/device), so the daily limit can't be bypassed with fresh profiles.
 - `test/server.test.mjs` predates users and disk storage. It still sends `name` when going live and doesn't set a temporary `dataDir`, so it needs updating before it is run again.

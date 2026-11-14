@@ -82,6 +82,17 @@ header { display: flex; align-items: center; justify-content: space-between; mar
 .who-line a:hover { text-decoration: underline; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 8px; }
 .share { word-break: break-all; }
+.welcome { width: min(92vw, 380px); border: 1px solid var(--line); border-radius: 20px; padding: 28px 24px 24px;
+  background: var(--card); color: var(--fg); text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.welcome::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(4px); }
+.welcome h2 { margin: 0 0 8px; font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
+.welcome h2 span { color: var(--live); }
+.welcome-lead { font-size: 18px; margin: 0 0 16px; }
+.welcome ul { list-style: none; padding: 0; margin: 0 0 24px; display: grid; gap: 10px; text-align: left; }
+.welcome li { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); }
+.welcome .btn { width: 100%; }
+.quota { text-align: center; margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+.quota.out { color: var(--fg); font-weight: 700; }
 .who { display: grid; gap: 12px; max-width: 360px; margin: 12vh auto 0; text-align: center; }
 .who label { font-size: 24px; font-weight: 800; }
 .who input { font: inherit; font-size: 18px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line);

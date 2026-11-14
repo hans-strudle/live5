@@ -9,6 +9,8 @@ A live-only video app. You can do exactly one thing: go live, briefly.
 - **Feed.** The home page is a full-screen vertical timeline, one broadcast per screen: live ones first, then past lives, newest first. The one in view plays (muted until you tap); the next and previous ones load ahead of time. A "new lives ↑" pill appears when someone goes live after the page loaded. Arrow keys and `j`/`k` move between broadcasts on desktop.
 - **Profiles.** `/u/<uuid>` starts with the person's name, join date and number of lives, then the same timeline of just their broadcasts. Names in the feed link to profiles.
 - **Previews.** Just after going live, the broadcaster's page grabs one frame from the camera and sends it as the broadcast's cover image, which the feed shows before the video loads.
+- **Daily limit.** Each user can start 5 lives in any rolling 24 hours (`LIVE5_MAX_PER_DAY`). The server refuses more with a 429. The Go live page shows how many are left and when the next one frees up. Lives that recorded no video don't count.
+- **Welcome popup.** The first page a device opens explains the rules (30 seconds, no edits, it goes out to the world, the daily limit), once. The numbers come from `GET /api/config`.
 - **No editing.** Chunks are appended in order while the broadcast is live; nothing can be changed, trimmed or re-sent afterwards.
 
 ## Run
