@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Profile · live5</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="feed-page">
+  <header class="float-header">
+    <a class="logo" href="/">live<span>5</span></a>
+    <nav><a class="btn" href="/go">Go live</a></nav>
+  </header>
+  <button class="pill" id="new" type="button" hidden></button>
+  <main class="feed" id="feed">
+    <!-- The profile header is the first stop in the timeline; scroll down for this person's lives. -->
+    <section class="profile-head" id="head">
+      <div class="avatar" id="avatar" aria-hidden="true"></div>
+      <h1 id="name">&nbsp;</h1>
+      <p class="muted" id="meta"></p>
+      <p class="you" id="you" hidden>This is you</p>
+      <p class="muted" id="msg"></p>
+      <p class="scroll-hint" id="hint" hidden>Scroll for lives ↓</p>
+    </section>
+  </main>
+  <script type="module">
+    import { createFeed } from '/feed.js';
+    const $ = (x) => document.getElementById(x);
+    const id = decodeURIComponent(location.pathname.split('/').pop());
+    let me = null;
+    try { me = JSON.parse(localStorage.getItem('live5:user') || 'null'); } catch {}
+
+    const r = await fetch(`/api/users/${encodeURIComponent(id)}`).catch(() => null);
+    if (!r || !r.ok) {
+      $('name').textContent = 'Profile not found';
+      $('msg').textContent = r && r.status === 404 ? 'This profile does not exist.' : 'Could not load this profile.';
+    } else {
+      const u = await r.json();
+      document.title = `${u.name} · live5`;
+      $('name').textContent = u.name;
+      $('avatar').textContent = [...u.name][0].toUpperCase();
+      const count = u.broadcasts.filter((b) => b.status === 'live' || b.endedAt).length;
+      const liveNow = u.broadcasts.some((b) => b.status === 'live');
+      $('meta').textContent = `Joined ${new Date(u.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}`
+        + ` · ${count} ${count === 1 ? 'live' : 'lives'}`;
+      $('you').hidden = !(me && me.id === u.id);
+      if (liveNow) { $('avatar').classList.add('is-live'); $('msg').textContent = 'Live now'; }
+      $('hint').hidden = count === 0;
+      createFeed($('feed'), {
+        user: u.id,
+        newPill: $('new'),
+        emptyTitle: 'No lives yet',
+        emptyText: me && me.id === u.id ? 'Your lives will show up here.' : `${u.name} hasn’t gone live yet.`,
+      });
+    }
+  </script>
+</body>
+</html>

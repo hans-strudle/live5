@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>live5</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body class="feed-page">
+  <header class="float-header">
+    <a class="logo" href="/">live<span>5</span></a>
+    <nav>
+      <a class="ghost-link" id="me" hidden>You</a>
+      <a class="btn" href="/go">Go live</a>
+    </nav>
+  </header>
+  <button class="pill" id="new" type="button" hidden></button>
+  <main class="feed" id="feed" aria-label="Broadcasts"></main>
+  <script type="module">
+    import { createFeed } from '/feed.js';
+    try {
+      const me = JSON.parse(localStorage.getItem('live5:user') || 'null');
+      if (me && me.id) { const a = document.getElementById('me'); a.href = `/u/${me.id}`; a.hidden = false; }
+    } catch {}
+    createFeed(document.getElementById('feed'), {
+      newPill: document.getElementById('new'),
+      emptyTitle: 'Nobody has gone live yet',
+      emptyText: 'Be the first. Lives last 30 seconds and can’t be edited.',
+    });
+  </script>
+</body>
+</html>

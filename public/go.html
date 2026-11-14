@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Go live · live5</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main>
+  <header>
+    <a class="logo" href="/">live<span>5</span></a>
+  </header>
+  <form id="who" class="who" hidden>
+    <label for="name">Enter your name</label>
+    <input id="name" name="name" maxlength="30" autocomplete="nickname" autocapitalize="words"
+           enterkeyhint="go" placeholder="Your name" required>
+    <button class="btn" type="submit" id="who-submit">Continue</button>
+    <p class="muted" id="who-msg">Shown to everyone who watches. No account needed.</p>
+  </form>
+  <div id="studio" hidden>
+  <p class="as" id="as"></p>
+  <div class="stage">
+    <video id="cam" autoplay muted playsinline></video>
+    <div class="badge" id="badge">OFF AIR</div>
+    <div class="timer" id="timer" hidden></div>
+    <div class="bar" id="bar"></div>
+  </div>
+  <div class="controls">
+    <button class="btn" id="go" disabled>Go live</button>
+    <button class="btn ghost" id="stop" hidden>End</button>
+    <button class="btn ghost" id="retry" hidden>Try camera again</button>
+  </div>
+  <p class="muted" id="msg" style="text-align:center">Starting camera…</p>
+  <p class="share" id="share" hidden style="text-align:center"></p>
+  </div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const cam = $('cam'), go = $('go'), stop = $('stop'), retry = $('retry'), msg = $('msg');
+  let media, recorder, stream, mime, seq = 0, queue = Promise.resolve(), tick, ending = false;
+
+  // MP4 (H.264/AAC) first: it plays on iOS and Android alike. WebM is the fallback.
+  function pickMime(hasAudio) {
+    const candidates = hasAudio
+      ? ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4',
+         'video/webm;codecs=vp8,opus', 'video/webm']
+      : ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4',
+         'video/webm;codecs=vp8', 'video/webm'];
+    return candidates.find((t) => MediaRecorder.isTypeSupported(t));
+  }
+
+  function explain(e) {
+    switch (e && e.name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return 'Camera permission was blocked. Allow camera and microphone for this site in your browser settings, then try again.';
+      case 'NotFoundError':
+      case 'OverconstrainedError':
+        return 'No camera was found on this device.';
+      case 'NotReadableError':
+      case 'AbortError':
+        return 'The camera is busy. Close other apps or tabs using it, then try again.';
+      default:
+        return `Camera unavailable: ${(e && e.message) || e}`;
+    }
+  }
+
+  async function openCamera() {
+    retry.hidden = true;
+    msg.textContent = 'Starting camera…';
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const https = `https://${location.host}${location.pathname}`;
+      msg.innerHTML = 'Phones only allow the camera on a secure (HTTPS) page. '
+        + `Open <a href="${https}">${https}</a> instead (the server needs <code>npm run cert</code> first).`;
+      return;
+    }
+    if (!window.MediaRecorder) { msg.textContent = 'This browser cannot record video. Update it and try again.'; return; }
+
+    // Try progressively simpler requests: some phones reject specific sizes or lack a mic.
+    const attempts = [
+      { video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } }, audio: true },
+      { video: true, audio: true },
+      { video: true, audio: false },
+    ];
+    let lastError;
+    for (const constraints of attempts) {
+      try { media = await navigator.mediaDevices.getUserMedia(constraints); break; }
+      catch (e) { lastError = e; if (e.name === 'NotAllowedError') break; }
+    }
+    if (!media) { msg.textContent = explain(lastError); retry.hidden = false; return; }
+
+    mime = pickMime(media.getAudioTracks().length > 0);
+    if (!mime) { msg.textContent = 'This browser cannot record video in a supported format.'; return; }
+    cam.srcObject = media;
+    cam.play().catch(() => {});
+    go.disabled = false;
+    msg.textContent = 'Pressing Go live broadcasts immediately. There is no preview or undo.';
+  }
+  retry.onclick = openCamera;
+
+  // Who is going live. No login: the server gives this device a user (public UUID + private
+  // key) the first time a name is entered; the key stays in this browser. Broadcasts are tied
+  // to the UUID, so changing the name keeps the same profile.
+  const USER_KEY = 'live5:user';
+  let user = null;
+  try { user = JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch {}
+  let suggestedName = '';
+  try { suggestedName = localStorage.getItem('live5:name') || ''; } catch {} // from before user ids
+
+  const authHeaders = () => ({ 'content-type': 'application/json', 'x-user-id': user.id, 'x-user-secret': user.secret });
+  function rememberUser(u) {
+    user = u;
+    try {
+      if (u) localStorage.setItem(USER_KEY, JSON.stringify(u)); else localStorage.removeItem(USER_KEY);
+      localStorage.removeItem('live5:name');
+    } catch {}
+  }
+
+  function showStudio() {
+    $('who').hidden = true;
+    $('studio').hidden = false;
+    $('as').innerHTML = '';
+    const b = document.createElement('strong');
+    b.textContent = user.name;
+    const change = document.createElement('a');
+    change.href = '#';
+    change.textContent = 'change name';
+    change.onclick = (e) => { e.preventDefault(); if (!recorder) showWho(); };
+    const profile = document.createElement('a');
+    profile.href = `/u/${user.id}`;
+    profile.textContent = 'your profile';
+    $('as').append('Going live as ', b, ' · ', change, ' · ', profile);
+    if (!media) openCamera();
+  }
+  function showWho(note) {
+    $('studio').hidden = true;
+    $('who').hidden = false;
+    $('name').value = user ? user.name : suggestedName;
+    $('who-msg').textContent = note || 'Shown to everyone who watches. No account needed.';
+    $('name').focus();
+  }
+
+  $('who').onsubmit = async (e) => {
+    e.preventDefault();
+    const value = $('name').value.replace(/\s+/g, ' ').trim();
+    if (!value) { $('name').focus(); return; }
+    $('who-submit').disabled = true;
+    try {
+      let r;
+      if (user) {
+        r = await fetch('/api/users/me', { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ name: value }) });
+        if (r.status === 401) rememberUser(null); // this server doesn't know us any more
+      }
+      if (!user) {
+        r = await fetch('/api/users', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: value }),
+        });
+      }
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) { $('who-msg').textContent = body.error || 'Could not save your name. Try again.'; return; }
+      rememberUser({ id: body.id, name: body.name, secret: body.secret || user.secret });
+      showStudio();
+    } catch {
+      $('who-msg').textContent = 'Could not reach the server. Try again.';
+    } finally {
+      $('who-submit').disabled = false;
+    }
+  };
+
+  (async () => {
+    if (!user) return showWho();
+    // Make sure this server still knows this device's user (e.g. after its data was reset).
+    const r = await fetch('/api/users/me', { headers: authHeaders() }).catch(() => null);
+    if (r && r.status === 401) {
+      suggestedName = user.name;
+      rememberUser(null);
+      return showWho('Welcome back. Enter your name to start a new profile.');
+    }
+    if (r && r.ok) rememberUser({ ...user, name: (await r.json()).name });
+    showStudio();
+  })();
+
+  function send(blob) {
+    const n = seq++;
+    queue = queue.then(async () => {
+      const r = await fetch(`/api/streams/${stream.id}/chunks?seq=${n}`, {
+        method: 'POST', headers: { 'x-broadcast-token': stream.token }, body: blob,
+      });
+      if (!r.ok) finish('The broadcast ended.');
+    }).catch(() => finish('Connection lost. The broadcast ended.'));
+  }
+
+  function finish(text) {
+    if (ending) return;
+    ending = true;
+    clearInterval(tick);
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (stream) {
+      queue.then(() => fetch(`/api/streams/${stream.id}/end`, {
+        method: 'POST', headers: { 'x-broadcast-token': stream.token },
+      }).catch(() => {}));
+    }
+    media.getTracks().forEach((t) => t.stop());
+    $('badge').textContent = 'ENDED';
+    $('badge').classList.remove('on');
+    stop.hidden = true;
+    msg.innerHTML = stream
+      ? `${text} <a href="/watch/${stream.id}">Watch the replay</a> · <a href="/u/${user.id}">Your profile</a> · <a href="/go">Go live again</a>`
+      : `${text} <a href="/go">Try again</a>`;
+  }
+
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      recorder = new MediaRecorder(media, { mimeType: mime, videoBitsPerSecond: 1_500_000 });
+    } catch {
+      recorder = new MediaRecorder(media);
+    }
+    // Chunks wait in the queue until the stream exists, so nothing recorded is lost.
+    let created;
+    queue = new Promise((r) => { created = r; });
+    recorder.ondataavailable = (e) => { if (e.data.size && !ending) send(e.data); };
+    recorder.start(500);
+
+    // The recorder reports its real format (with codecs) once started; viewers need it.
+    const type = recorder.mimeType || mime;
+    const r = await fetch('/api/streams', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ type }),
+    }).catch(() => null);
+    if (!r || !r.ok) {
+      const err = r && (await r.json().catch(() => null));
+      finish(`Could not go live${err && err.error ? `: ${err.error}` : ''}.`);
+      return;
+    }
+    stream = await r.json();
+    created();
+    setTimeout(() => sendPreview().catch(() => {}), 800);
+
+    const started = Date.now(), limit = stream.maxSeconds * 1000;
+    go.hidden = true; stop.hidden = false;
+    $('badge').textContent = 'LIVE'; $('badge').classList.add('on');
+    $('timer').hidden = false;
+    const link = `${location.origin}/watch/${stream.id}`;
+    $('share').hidden = false;
+    $('share').innerHTML = `Share: <a href="${link}" target="_blank">${link}</a>`;
+    msg.textContent = `You're live. Ends automatically after ${stream.maxSeconds}s.`;
+    tick = setInterval(() => {
+      const left = Math.max(0, limit - (Date.now() - started));
+      $('timer').textContent = `${Math.ceil(left / 1000)}s`;
+      $('bar').style.width = `${100 - (left / limit) * 100}%`;
+      if (left <= 0) finish('Time is up.');
+    }, 250);
+  };
+  stop.onclick = () => finish('You ended the broadcast.');
+
+  // The feed's preview image: one frame from the live camera, taken just after going live.
+  async function sendPreview() {
+    if (!cam.videoWidth || ending) return;
+    const w = 360, h = Math.round((w * cam.videoHeight) / cam.videoWidth);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(cam, 0, 0, w, h);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.7));
+    if (!blob || ending) return;
+    await fetch(`/api/streams/${stream.id}/poster`, {
+      method: 'POST', headers: { 'x-broadcast-token': stream.token, 'content-type': 'image/jpeg' }, body: blob,
+    });
+  }
+</script>
+</body>
+</html>
