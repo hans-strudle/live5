@@ -1,0 +1,27 @@
+# systemd unit for live5. Install: sudo cp deploy/live5.service /etc/systemd/system/
+# Assumes the app is in /opt/live5 and runs as the "live5" user (see deploy/EC2.md).
+[Unit]
+Description=live5
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=live5
+WorkingDirectory=/opt/live5
+ExecStart=/usr/bin/node server.mjs
+Environment=PORT=5555
+Environment=LIVE5_HOST=127.0.0.1
+# Caddy provides HTTPS; make sure the app never picks up a stray local certificate.
+Environment=LIVE5_TLS_KEY=/nonexistent
+Environment=LIVE5_DATA_DIR=/opt/live5/data
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/live5/data
+
+[Install]
+WantedBy=multi-user.target

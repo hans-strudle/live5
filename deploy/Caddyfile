@@ -1,0 +1,11 @@
+# Caddy in front of live5: real HTTPS (automatic Let's Encrypt certificate) so phones allow the camera.
+# Replace the site address with your domain, or with your Elastic IP written with dashes
+# on sslip.io, e.g. 3-121-45-67.sslip.io (no domain needed). Install to /etc/caddy/Caddyfile.
+YOUR-ELASTIC-IP-WITH-DASHES.sslip.io {
+	# Compresses pages, scripts and JSON; Caddy's defaults skip video and images.
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:5555 {
+		# Live viewers get one long response that grows as pieces arrive: pass each piece on immediately.
+		flush_interval -1
+	}
+}

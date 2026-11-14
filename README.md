@@ -67,6 +67,10 @@ Everything is saved under `data/` (git-ignored; change it with `LIVE5_DATA_DIR`)
 
 Broadcasts and profiles survive restarts. A broadcast that was live when the server stopped is marked ended (`server-restart`). If a browser loses its stored key (cleared site data, another browser or device), it gets a new profile; there is no recovery yet.
 
+## Deploying
+
+For a test server on a small EC2 instance (systemd service plus Caddy for real HTTPS), see [deploy/EC2.md](deploy/EC2.md).
+
 ## Status
 
 Prototype. See [AGENTS.md](AGENTS.md) for the product rules and open questions.

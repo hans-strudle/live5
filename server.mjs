@@ -454,7 +454,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const tls = existsSync(keyFile) && existsSync(certFile)
     ? { key: readFileSync(keyFile), cert: readFileSync(certFile) } : null;
   const scheme = tls ? 'https' : 'http';
-  createApp({ tls }).server.listen(port, () => {
+  // LIVE5_HOST=127.0.0.1 when a reverse proxy (e.g. Caddy on a server) is the only way in.
+  const host = process.env.LIVE5_HOST || undefined;
+  createApp({ tls }).server.listen(port, host, () => {
     console.log(`live5 on ${scheme}://localhost:${port}`);
     for (const list of Object.values(networkInterfaces())) {
       for (const a of list ?? []) {
