@@ -13,10 +13,14 @@
 
 ## Engineering
 
+- Don't do manual testing: no browser pages, screenshots, page inspection, or temporary servers to try things out. The owner does all manual and device testing; build the change, then say what to check (owner decision, 2026-11-13).
+
 - Zero runtime dependencies so far; keep it that way unless there is a clear need.
 - `npm test` must pass for server changes.
-- Phones need HTTPS for the camera (`npm run cert`). Real-device checks on iOS Safari and Android Chrome are still outstanding; the desktop browser pane cannot use a camera.
+- Phones need HTTPS for the camera (`npm run cert`). The desktop browser pane cannot use a camera. Replays converted by `mp4.mjs` were checked in Chromium only; iOS Safari and Firefox playback are still unverified.
 - Viewer playback relies on Media Source; keep the broadcaster preferring MP4 so iOS viewers can decode Android broadcasts.
+- Replays of MP4 recordings are served from `<id>.replay.mp4`, a plain (non-fragmented) copy made by `mp4.mjs` when the broadcast ends. Never modify the original recording.
+- The `/go` page must send the recorder's final piece after `stop()`. Android Chrome only delivers MP4 at fragment boundaries, so dropping it lost several seconds, or the whole video for short lives.
 - Do not deploy, publish, commit or push without the owner's authorization.
 
 ## Open questions

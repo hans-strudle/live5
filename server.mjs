@@ -4,6 +4,7 @@ import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypt
 import { readFile, writeFile, appendFile, rename, stat } from 'node:fs/promises';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, createReadStream } from 'node:fs';
 import { networkInterfaces } from 'node:os';
+import { isFragmentedMp4, defragmentMp4 } from './mp4.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -17,6 +18,7 @@ const STATIC = {
   '/feed.js': ['feed.js', 'text/javascript'],
 };
 const MAX_POSTER_BYTES = 300 * 1024;
+const FINAL_PIECE_GRACE = 3; // seconds
 const clampInt = (v, min, max, fallback) => {
   const n = Number.parseInt(v, 10);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
@@ -85,11 +87,13 @@ export function createApp({
 
   const videoFile = (s) => path.join(streamDir, `${s.id}.${s.ext}`);
   const posterFile = (s) => path.join(streamDir, `${s.id}.jpg`);
+  // What replays serve: the converted plain MP4 when there is one, else the recording itself.
+  const replayFile = (s) => (s.replay ? path.join(streamDir, s.replay) : videoFile(s));
   function saveStream(s) {
     const meta = {
       id: s.id, userId: s.userId, type: s.type, ext: s.ext, status: s.status,
       startedAt: s.startedAt, endedAt: s.endedAt ?? null, endReason: s.endReason ?? null, bytes: s.bytes,
-      hasPoster: !!s.hasPoster,
+      hasPoster: !!s.hasPoster, replay: s.replay ?? null, empty: !!s.empty,
     };
     s.saving = (s.saving ?? Promise.resolve())
       .then(() => writeFile(path.join(streamDir, `${s.id}.json`), JSON.stringify(meta, null, 2)))
@@ -110,7 +114,46 @@ export function createApp({
     s.chunks = null; // the video is on disk; replays read it from there
     s.token = null;
     saveStream(s);
+    s.finalizing = finalize(s);
   }
+
+  // After a broadcast ends: MediaRecorder writes fragmented MP4, which some browsers won't play
+  // from a URL. Write a plain MP4 copy for replays (the recording itself is left untouched).
+  // A recording with no playable samples is marked empty and left out of the feed.
+  async function finalize(s) {
+    try {
+      await s.lastAppend;
+      if (s.ext !== 'mp4' || s.replay || s.empty) return;
+      let buf;
+      try { buf = await readFile(videoFile(s)); } catch { buf = Buffer.alloc(0); }
+      if (!isFragmentedMp4(buf)) {
+        if (!buf.length || !boxesHaveMedia(buf)) { s.empty = true; await saveStream(s); }
+        return;
+      }
+      const plain = defragmentMp4(buf);
+      if (!plain) { s.empty = true; await saveStream(s); return; }
+      const name = `${s.id}.replay.mp4`;
+      await writeFile(path.join(streamDir, `${name}.tmp`), plain);
+      await rename(path.join(streamDir, `${name}.tmp`), path.join(streamDir, name));
+      s.replay = name;
+      await saveStream(s);
+    } catch (e) {
+      console.error(`preparing replay for ${s.id} failed`, e);
+    }
+  }
+  // A non-fragmented file needs at least one media box to be worth showing.
+  const boxesHaveMedia = (buf) => buf.includes(Buffer.from('mdat')) || buf.includes(Buffer.from('moof'));
+
+  // Recordings from before replays were converted (or interrupted by a restart): convert now,
+  // one at a time, in the background.
+  queueMicrotask(async () => {
+    for (const s of streams.values()) {
+      if (s.status === 'ended' && s.ext === 'mp4' && !s.replay && !s.empty) {
+        s.finalizing = finalize(s);
+        await s.finalizing;
+      }
+    }
+  });
 
   function touch(s) {
     clearTimeout(s.idleTimer);
@@ -232,7 +275,7 @@ export function createApp({
       const u = users.get(parts[2]);
       if (!u) return json(res, 404, { error: 'no such user' });
       const broadcasts = [...streams.values()]
-        .filter((s) => s.userId === u.id)
+        .filter((s) => s.userId === u.id && !s.empty)
         .sort((a, b) => b.startedAt - a.startedAt)
         .map(publicStream);
       return json(res, 200, { ...publicUser(u), broadcasts });
@@ -259,7 +302,9 @@ export function createApp({
         status: 'live', startedAt: Date.now(), bytes: 0,
         token: randomBytes(24).toString('base64url'), chunks: [], nextSeq: 0, busy: false, viewers: new Set(),
       };
-      s.capTimer = setTimeout(() => endStream(s, 'time-limit'), maxSeconds * 1000);
+      // The page stops recording at maxSeconds; the extra moment lets its final piece (which some
+      // recorders only hand over when stopped) arrive before the hard cap closes the broadcast.
+      s.capTimer = setTimeout(() => endStream(s, 'time-limit'), (maxSeconds + FINAL_PIECE_GRACE) * 1000);
       touch(s);
       streams.set(s.id, s);
       await saveStream(s);
@@ -275,7 +320,7 @@ export function createApp({
       const limit = clampInt(url.searchParams.get('limit'), 1, 50, 10);
       const all = [...streams.values()]
         .filter((s) => (!user || s.userId === user) && (!status || s.status === status))
-        .filter((s) => s.status === 'live' || s.bytes > 0)
+        .filter((s) => s.status === 'live' || (s.bytes > 0 && !s.empty))
         .sort((a, b) => {
           const al = a.status === 'live', bl = b.status === 'live';
           return al !== bl ? (al ? -1 : 1) : b.startedAt - a.startedAt;
@@ -306,7 +351,8 @@ export function createApp({
         s.nextSeq++;
         for (const v of s.viewers) v.write(body);
         touch(s);
-        await appendFile(videoFile(s), body);
+        s.lastAppend = appendFile(videoFile(s), body);
+        await s.lastAppend;
         return json(res, 200, { ok: true, seq });
       } finally {
         s.busy = false;
@@ -365,8 +411,11 @@ export function createApp({
   // requests (Safari's <video> refuses media that does not support them).
   async function sendReplay(s, req, res) {
     await s.saving;
+    await s.finalizing;
+    if (s.empty) return json(res, 404, { error: 'no video was recorded' });
+    const file = replayFile(s);
     let total;
-    try { total = (await stat(videoFile(s))).size; } catch { total = 0; }
+    try { total = (await stat(file)).size; } catch { total = 0; }
     if (!total) return json(res, 404, { error: 'no video was recorded' });
     const headers = { 'content-type': s.type, 'accept-ranges': 'bytes', 'cache-control': 'no-store' };
     const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
@@ -382,7 +431,7 @@ export function createApp({
       headers['content-range'] = `bytes ${start}-${end}/${total}`;
     }
     res.writeHead(code, { ...headers, 'content-length': end - start + 1 });
-    createReadStream(videoFile(s), { start, end }).pipe(res);
+    createReadStream(file, { start, end }).pipe(res);
   }
 
   const handler = (req, res) => {

@@ -195,13 +195,17 @@
     if (ending) return;
     ending = true;
     clearInterval(tick);
-    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    // Stopping hands over the last recorded piece (on Android Chrome this can be several
+    // seconds of video). Wait for it to be sent before ending the broadcast.
+    const stopped = recorder && recorder.state !== 'inactive'
+      ? new Promise((resolve) => { recorder.addEventListener('stop', resolve, { once: true }); recorder.stop(); })
+      : Promise.resolve();
     if (stream) {
-      queue.then(() => fetch(`/api/streams/${stream.id}/end`, {
+      stopped.then(() => queue).then(() => fetch(`/api/streams/${stream.id}/end`, {
         method: 'POST', headers: { 'x-broadcast-token': stream.token },
       }).catch(() => {}));
     }
-    media.getTracks().forEach((t) => t.stop());
+    stopped.then(() => media.getTracks().forEach((t) => t.stop()));
     $('badge').textContent = 'ENDED';
     $('badge').classList.remove('on');
     stop.hidden = true;
@@ -213,14 +217,20 @@
   go.onclick = async () => {
     go.disabled = true;
     try {
-      recorder = new MediaRecorder(media, { mimeType: mime, videoBitsPerSecond: 1_500_000 });
+      // A key frame every second: Chrome cuts MP4 pieces at key frames, so without this Android
+      // sends ~6-second pieces and live viewers wait that long. Browsers that don't know the
+      // option ignore it.
+      recorder = new MediaRecorder(media, {
+        mimeType: mime, videoBitsPerSecond: 1_500_000, videoKeyFrameIntervalDuration: 1000,
+      });
     } catch {
       recorder = new MediaRecorder(media);
     }
     // Chunks wait in the queue until the stream exists, so nothing recorded is lost.
     let created;
     queue = new Promise((r) => { created = r; });
-    recorder.ondataavailable = (e) => { if (e.data.size && !ending) send(e.data); };
+    // Pieces that arrive while ending (the recorder's final flush) are still sent.
+    recorder.ondataavailable = (e) => { if (e.data.size) send(e.data); };
     recorder.start(500);
 
     // The recorder reports its real format (with codecs) once started; viewers need it.
