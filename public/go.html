@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Go live · live5</title>
   <!--META-->
   <link rel="stylesheet" href="/app.css">
@@ -20,24 +20,29 @@
     <button class="btn" type="submit" id="who-submit">Continue</button>
     <p class="muted" id="who-msg">Shown to everyone who watches. No account needed.</p>
   </form>
-  <div id="studio" hidden>
-  <p class="as" id="as"></p>
-  <div class="stage">
-    <video id="cam" autoplay muted playsinline></video>
+</main>
+<!-- The studio: the camera fills the screen; status across the top, controls over the bottom.
+     The Go live button is there from the start (greyed out until the camera is ready). -->
+<div id="studio" class="studio" hidden>
+  <video id="cam" autoplay muted playsinline></video>
+  <div class="studio-top">
+    <a class="logo" href="/" aria-label="Back to live5">live<span>5</span></a>
     <div class="badge" id="badge">OFF AIR</div>
     <div class="timer" id="timer" hidden></div>
-    <div class="bar" id="bar"></div>
   </div>
-  <div class="controls">
-    <button class="btn" id="go" disabled>Go live</button>
-    <button class="btn ghost" id="stop" hidden>End</button>
-    <button class="btn ghost" id="retry" hidden>Try camera again</button>
+  <div class="bar" id="bar"></div>
+  <div class="studio-bottom">
+    <p class="as" id="as"></p>
+    <div class="controls">
+      <button class="btn go-btn" id="go" disabled>Go live</button>
+      <button class="btn go-btn end" id="stop" hidden>End</button>
+      <button class="btn ghost" id="retry" hidden>Try camera again</button>
+    </div>
+    <p class="quota" id="quota" hidden></p>
+    <p class="studio-msg" id="msg">Starting camera…</p>
+    <p class="share" id="share" hidden></p>
   </div>
-  <p class="quota" id="quota" hidden></p>
-  <p class="muted" id="msg" style="text-align:center">Starting camera…</p>
-  <p class="share" id="share" hidden style="text-align:center"></p>
-  </div>
-</main>
+</div>
 <script>
   const $ = (id) => document.getElementById(id);
   const cam = $('cam'), go = $('go'), stop = $('stop'), retry = $('retry'), msg = $('msg');

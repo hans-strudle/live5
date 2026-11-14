@@ -33,6 +33,7 @@ header { display: flex; align-items: center; justify-content: space-between; mar
 .avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
   background: var(--live); color: var(--live-fg); font-size: 18px; font-weight: 800; object-fit: cover; }
 img.avatar { background: #222; }
+.avatar.xs { width: 32px; height: 32px; font-size: 14px; }
 .avatar.sm { width: 36px; height: 36px; font-size: 16px; border: 2px solid rgba(255,255,255,.85); }
 .avatar.md { width: 44px; height: 44px; font-size: 20px; }
 .avatar.is-live { box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--live); }
@@ -57,6 +58,42 @@ img.avatar { background: #222; }
 .card-meta { color: rgba(255,255,255,.8); font-size: 14px; margin-top: 2px; }
 .sound { position: absolute; right: 12px; bottom: calc(28px + env(safe-area-inset-bottom)); width: 44px; height: 44px;
   border-radius: 50%; border: 0; background: rgba(0,0,0,.5); color: #fff; font-size: 20px; cursor: pointer; }
+/* Comment button on feed cards, stacked above the sound button. */
+.talk { position: absolute; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); width: 44px;
+  display: grid; justify-items: center; gap: 2px; border: 0; background: none; color: #fff; cursor: pointer; padding: 0; }
+.talk-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0,0,0,.5); font-size: 20px; }
+.talk-count { font-size: 12px; font-weight: 700; min-height: 1em; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+.card-info { padding-right: 72px; }
+
+/* Comment sheet: slides up from the bottom over the video. */
+.sheet { margin: auto auto 0; width: min(100vw, 520px); max-width: 100vw; max-height: 72dvh; padding: 0;
+  border: 1px solid var(--line); border-bottom: 0; border-radius: 18px 18px 0 0; background: var(--card); color: var(--fg);
+  display: flex; flex-direction: column; }
+.sheet:not([open]) { display: none; }
+.sheet::backdrop { background: rgba(0,0,0,.45); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line); }
+.sheet-head h2 { margin: 0; font-size: 16px; }
+.sheet-close { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 4px 8px; }
+.comments { list-style: none; margin: 0; padding: 8px 16px; overflow-y: auto; flex: 1; min-height: 120px; }
+.comment { display: flex; gap: 10px; padding: 8px 0; }
+.comment-avatar { flex: none; text-decoration: none; }
+.comment-body { min-width: 0; }
+.comment-line { display: flex; gap: 8px; align-items: baseline; }
+.comment-author { font-weight: 700; font-size: 14px; text-decoration: none; overflow-wrap: anywhere; }
+.comment-time { color: var(--muted); font-size: 12px; }
+.comment-text-body { margin: 2px 0 0; overflow-wrap: anywhere; }
+.comments-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--muted); }
+.comment-form { display: grid; gap: 8px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.comment-row { display: flex; gap: 8px; }
+.comment-form input { font: inherit; min-width: 0; flex: 1; padding: 10px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+.comment-form input:focus { outline: 2px solid var(--live); outline-offset: 1px; }
+.comment-form .btn { padding: 10px 18px; }
+.comment-note { margin: 0; font-size: 13px; color: var(--live); min-height: 0; }
+.comment-note:empty { display: none; }
+
 .card-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.2); }
 .card-progress i { display: block; height: 100%; width: 0; background: var(--live); }
 .card-note { position: absolute; left: 16px; right: 16px; top: 45%; text-align: center; padding: 12px;
@@ -110,6 +147,32 @@ img.avatar { background: #222; }
 .who input:focus { outline: 2px solid var(--live); outline-offset: 1px; }
 .as { text-align: center; margin: 0 0 12px; }
 .as a { color: var(--muted); }
+
+/* ---------- Go live studio: full-screen camera, status on top, controls at the bottom ---------- */
+.studio { position: fixed; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); z-index: 5;
+  width: min(100vw, calc(100dvh * 9 / 16)); background: #000; overflow: hidden; }
+@media (max-width: 600px) { .studio { width: 100vw; } }
+/* Mirrored like a mirror, as front-camera previews usually are; the broadcast itself is not mirrored. */
+.studio video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.studio-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px;
+  padding: calc(12px + env(safe-area-inset-top)) 14px 28px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
+.studio-top .logo { margin-right: auto; }
+.studio-top .badge, .studio-top .timer { position: static; }
+.studio .bar { top: 0; bottom: auto; z-index: 1; }
+.studio-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: grid; gap: 10px; justify-items: center;
+  text-align: center; padding: 48px 16px calc(20px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgba(0,0,0,.75)); }
+.studio-bottom p { margin: 0; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.studio .as { font-size: 14px; color: rgba(255,255,255,.9); }
+.studio .as a { color: rgba(255,255,255,.7); }
+.studio .quota { margin: 0; color: rgba(255,255,255,.75); }
+.studio .quota.out { color: #fff; }
+.studio-msg { font-size: 14px; color: rgba(255,255,255,.8); max-width: 36ch; }
+.studio-msg a, .studio .share a { color: #fff; }
+.studio .share { font-size: 13px; word-break: break-all; }
+.go-btn { min-width: 200px; padding: 16px 32px; font-size: 18px; box-shadow: 0 6px 24px rgba(255,45,85,.45); }
+.go-btn[disabled] { opacity: .55; box-shadow: none; }
+.go-btn.end { background: #fff; color: #000; box-shadow: none; }
 .who-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
 .who-line h1 { font-size: 20px; margin: 0; overflow-wrap: anywhere; }
 .name { overflow-wrap: anywhere; }

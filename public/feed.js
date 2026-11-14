@@ -2,6 +2,8 @@
 // The card in view plays; its neighbours load ahead of time; far-away cards release their video.
 // Used by the home page (everyone) and profile pages (one user).
 
+import { openComments } from '/comments.js';
+
 const MS = window.ManagedMediaSource || window.MediaSource;
 const PAGE = 8;
 let soundOn = false;
@@ -112,7 +114,20 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
     const note = el('div', 'card-note');
     note.hidden = true;
 
-    node.append(video, top, info, sound, progress, note);
+    // Comments: opens the comment sheet over the video; the count updates as people comment.
+    const talk = el('button', 'talk');
+    talk.type = 'button';
+    talk.setAttribute('aria-label', 'Comments');
+    const talkCount = el('span', 'talk-count');
+    talk.append(el('span', 'talk-icon', '💬'), talkCount);
+    const showCount = (n) => { talkCount.textContent = n ? String(n) : ''; };
+    showCount(s.commentCount);
+    talk.onclick = (e) => {
+      e.stopPropagation();
+      openComments(card.stream, { onCount: (n) => { card.stream.commentCount = n; showCount(n); } });
+    };
+
+    node.append(video, top, info, talk, sound, progress, note);
 
     // Tap the video: first tap turns sound on; after that it pauses/resumes.
     video.onclick = () => {

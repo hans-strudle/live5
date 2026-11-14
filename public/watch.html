@@ -19,8 +19,22 @@
     <video id="v" autoplay muted playsinline controls></video>
     <div class="badge" id="badge"></div>
   </div>
+  <div class="controls"><button class="btn ghost" id="comments" type="button" hidden>💬 Comments</button></div>
   <p class="muted" id="msg" style="text-align:center"></p>
 </main>
+<script type="module">
+  import { openComments } from '/comments.js';
+  const btn = document.getElementById('comments');
+  const id = location.pathname.split('/').pop();
+  const label = (n) => { btn.textContent = n ? `💬 Comments · ${n}` : '💬 Comments'; };
+  const r = await fetch(`/api/streams/${id}`).catch(() => null);
+  if (r && r.ok) {
+    const s = await r.json();
+    label(s.commentCount);
+    btn.hidden = false;
+    btn.onclick = () => openComments(s, { onCount: label });
+  }
+</script>
 <script>
   const id = location.pathname.split('/').pop();
   const v = document.getElementById('v'), badge = document.getElementById('badge'), msg = document.getElementById('msg');

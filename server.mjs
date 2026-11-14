@@ -17,6 +17,8 @@ const STATIC = {
   '/app.css': ['app.css', 'text/css'],
   '/feed.js': ['feed.js', 'text/javascript'],
   '/welcome.js': ['welcome.js', 'text/javascript'],
+  '/me.js': ['me.js', 'text/javascript'],
+  '/comments.js': ['comments.js', 'text/javascript'],
 };
 const MAX_POSTER_BYTES = 300 * 1024;
 const FINAL_PIECE_GRACE = 3; // seconds
@@ -31,16 +33,22 @@ const PAGES = { watch: 'watch.html', u: 'profile.html' };
 // broadcasts to the person) plus a private key the device keeps to act as that user.
 // Display names are free text, not unique, and can be changed; the UUID never changes.
 export const MAX_NAME = 30;
-export function cleanName(raw) {
+export const MAX_COMMENT = 200;
+// One line of plain text: whitespace collapsed, control and invisible characters removed.
+// Empty string if missing or longer than max characters.
+function cleanText(raw, max) {
   if (typeof raw !== 'string') return '';
-  const name = raw.normalize('NFC')
+  const text = raw.normalize('NFC')
     .replace(/\s+/g, ' ') // tabs, newlines and runs of spaces become one space
     // then drop other control and invisible-format characters (keeping the emoji joiner)
     .replace(/\p{Cc}|(?!‍)\p{Cf}/gu, '')
     .replace(/ {2,}/g, ' ')
     .trim();
-  return [...name].length > MAX_NAME ? '' : name;
+  return [...text].length > max ? '' : text;
 }
+export const cleanName = (raw) => cleanText(raw, MAX_NAME);
+export const cleanComment = (raw) => cleanText(raw, MAX_COMMENT);
+const COMMENT_GAP_MS = 3000; // one comment every 3 seconds per user
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
@@ -114,7 +122,7 @@ export function createApp({
     const meta = {
       id: s.id, userId: s.userId, type: s.type, ext: s.ext, status: s.status,
       startedAt: s.startedAt, endedAt: s.endedAt ?? null, endReason: s.endReason ?? null, bytes: s.bytes,
-      hasPoster: !!s.hasPoster, replay: s.replay ?? null, empty: !!s.empty,
+      hasPoster: !!s.hasPoster, replay: s.replay ?? null, empty: !!s.empty, commentCount: s.commentCount ?? 0,
     };
     s.saving = (s.saving ?? Promise.resolve())
       .then(() => writeFile(path.join(streamDir, `${s.id}.json`), JSON.stringify(meta, null, 2)))
@@ -194,6 +202,7 @@ export function createApp({
       durationMs: s.endedAt ? s.endedAt - s.startedAt : null,
       poster: s.hasPoster ? `/api/streams/${s.id}/poster` : null,
       avatar: avatarOf(s.userId),
+      commentCount: s.commentCount ?? 0,
       maxSeconds,
       viewers: s.viewers.size,
     };
@@ -213,6 +222,20 @@ export function createApp({
     }
     return avatars.get(userId);
   }
+
+  // ---- comments: data/streams/<id>.comments.jsonl, one JSON object per line, loaded on first use ----
+  const commentsFile = (s) => path.join(streamDir, `${s.id}.comments.jsonl`);
+  const lastCommentAt = new Map(); // userId -> time of their last comment (in memory)
+  function loadComments(s) {
+    s.comments ??= readFile(commentsFile(s), 'utf8')
+      .then((text) => text.split('\n').filter(Boolean).map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean))
+      .catch(() => []);
+    return s.comments;
+  }
+  const publicComment = (c) => ({
+    id: c.id, userId: c.userId, name: users.get(c.userId)?.name ?? 'Someone', avatar: avatarOf(c.userId),
+    text: c.text, createdAt: c.createdAt,
+  });
 
   const publicUser = (u) => ({ id: u.id, name: u.name, createdAt: u.createdAt, avatar: avatarOf(u.id) });
 
@@ -270,8 +293,8 @@ export function createApp({
     });
   }
 
-  async function readJsonBody(req) {
-    try { return JSON.parse((await readBody(req, 1024)).toString('utf8') || '{}') ?? {}; }
+  async function readJsonBody(req, limit = 1024) {
+    try { return JSON.parse((await readBody(req, limit)).toString('utf8') || '{}') ?? {}; }
     catch { return null; }
   }
 
@@ -570,6 +593,39 @@ export function createApp({
       res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=86400' });
       createReadStream(posterFile(s)).on('error', () => res.end()).pipe(res);
       return;
+    }
+
+    // Comments: GET /api/streams/:id/comments?from=n (n = how many the caller already has),
+    // POST /api/streams/:id/comments {text} as a user. Text only, append-only.
+    if (parts[3] === 'comments' && parts.length === 4) {
+      if (s.empty) return json(res, 404, { error: 'no such stream' });
+      if (req.method === 'GET') {
+        const list = await loadComments(s);
+        const from = clampInt(url.searchParams.get('from'), 0, list.length, 0);
+        const items = list.slice(Math.max(from, list.length - 500)).map(publicComment);
+        return json(res, 200, { items, next: list.length });
+      }
+      if (req.method === 'POST') {
+        const u = currentUser(req);
+        if (!u) return json(res, 401, { error: 'unknown user' });
+        const body = await readJsonBody(req, 4096);
+        const text = cleanComment(body?.text);
+        if (!text) return json(res, 400, { error: `write 1–${MAX_COMMENT} characters` });
+        const now = Date.now();
+        if (now - (lastCommentAt.get(u.id) ?? 0) < COMMENT_GAP_MS) return json(res, 429, { error: 'slow down a little' });
+        lastCommentAt.set(u.id, now);
+        const c = { id: randomBytes(6).toString('base64url'), userId: u.id, text, createdAt: now };
+        const list = await loadComments(s);
+        list.push(c);
+        s.commentCount = list.length;
+        s.commentWrite = (s.commentWrite ?? Promise.resolve())
+          .then(() => appendFile(commentsFile(s), `${JSON.stringify(c)}\n`))
+          .catch((e) => console.error(`saving comment on ${s.id} failed`, e));
+        await s.commentWrite;
+        saveStream(s);
+        return json(res, 201, { ...publicComment(c), count: list.length });
+      }
+      return json(res, 405, { error: 'method not allowed' });
     }
 
     // POST /api/streams/:id/end
