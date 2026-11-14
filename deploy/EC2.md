@@ -106,6 +106,23 @@ Ubuntu (Caddy is already running): `sudo systemctl reload caddy`.
 
 Caddy gets the certificate on the first request. Open `https://<your-name>/` on a phone: no certificate warning, and the camera works. If it doesn't load, `journalctl -u caddy -f` shows certificate errors (usually port 80 or 443 not open in the security group).
 
+## Live alerts (phone notifications)
+
+Push services want a contact for whoever sends notifications, and Apple rejects placeholder addresses. Set yours once:
+
+```bash
+sudo systemctl edit live5
+```
+
+In the editor, add these lines, then save:
+
+```
+[Service]
+Environment=LIVE5_VAPID_SUBJECT=mailto:you@yourdomain.com
+```
+
+Then `sudo systemctl restart live5`. The server's push keys are created automatically in `/opt/live5/data/vapid.json`. Keep that file: if it's lost, everyone has to turn alerts on again.
+
 ## Updating
 
 Commit, re-run the copy command from step 4, then restart:

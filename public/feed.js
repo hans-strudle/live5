@@ -4,11 +4,23 @@
 
 import { openComments } from '/comments.js';
 import { shareStream, shareIcon } from '/share.js';
+import { getUser } from '/me.js';
 
 const MS = window.ManagedMediaSource || window.MediaSource;
 const PAGE = 8;
-let soundOn = false;
+const POLL_MS = 5000; // how often to look for new lives and viewer counts
 const allVideos = new Set();
+
+// ---------- sound ----------
+// Sound is on unless the viewer turned it off (remembered). Browsers refuse to play sound
+// before the person has tapped or clicked on the page; when that happens the video plays muted,
+// a "Tap for sound" hint shows, and the next tap anywhere turns the sound on.
+const SOUND_KEY = 'live5:sound';
+let soundOn = (() => { try { return localStorage.getItem(SOUND_KEY) !== 'off'; } catch { return true; } })();
+let soundBlocked = false; // the browser refused sound; waiting for a tap
+let currentVideo = null; // the video on screen
+let tapJustUnmuted = false; // the current tap was used to turn sound on (don't also pause etc.)
+let soundHint = null;
 
 function ago(t) {
   const s = Math.max(0, Math.round((Date.now() - t) / 1000));
@@ -29,14 +41,55 @@ function mseType(type) {
   return guesses.find((t) => { try { return MS.isTypeSupported(t); } catch { return false; } }) || null;
 }
 
+function updateSoundUi() {
+  const audible = soundOn && !soundBlocked;
+  document.querySelectorAll('.sound').forEach((b) => {
+    b.textContent = audible ? '🔊' : '🔇';
+    b.setAttribute('aria-label', audible ? 'Mute' : 'Unmute');
+  });
+  if (!soundHint && soundOn && soundBlocked) {
+    soundHint = el('div', 'sound-hint', '🔇 Tap for sound');
+    soundHint.setAttribute('aria-hidden', 'true');
+    document.body.append(soundHint);
+  }
+  if (soundHint) soundHint.hidden = !(soundOn && soundBlocked);
+}
+
 function setSound(on) {
   soundOn = on;
+  soundBlocked = false;
+  try { localStorage.setItem(SOUND_KEY, on ? 'on' : 'off'); } catch {}
   for (const v of allVideos) v.muted = !on;
-  document.querySelectorAll('.sound').forEach((b) => {
-    b.textContent = on ? '🔊' : '🔇';
-    b.setAttribute('aria-label', on ? 'Mute' : 'Unmute');
+  updateSoundUi();
+}
+
+// Play with sound if allowed; if the browser refuses, play muted and wait for a tap.
+function playWithSound(v) {
+  v.muted = !soundOn || soundBlocked;
+  return v.play().then(() => {
+    if (soundOn && !v.muted && soundBlocked) { soundBlocked = false; updateSoundUi(); }
+  }).catch(() => {
+    if (v.muted) return; // failed for some other reason than sound
+    soundBlocked = true;
+    v.muted = true;
+    updateSoundUi();
+    v.play().catch(() => {});
   });
 }
+
+// The first tap/click/key anywhere lets the browser play sound: use it to unmute the video on
+// screen. Runs before the tapped element's own handler (capture), which then ignores this tap.
+function unlockSound() {
+  if (!soundOn || !soundBlocked || !currentVideo) return;
+  soundBlocked = false;
+  currentVideo.muted = false;
+  currentVideo.play().catch(() => {});
+  updateSoundUi();
+  tapJustUnmuted = true;
+  setTimeout(() => { tapJustUnmuted = false; }, 0);
+}
+document.addEventListener('click', unlockSound, true);
+document.addEventListener('keydown', unlockSound, true);
 
 // Profile picture: a frame from the person's latest live, or their initial when there's none yet.
 export function avatarNode(url, name, cls = 'avatar') {
@@ -62,7 +115,7 @@ function el(tag, cls, text) {
 }
 
 // first: a broadcast id to show before everything else (a shared link), then the feed as usual.
-export function createFeed(root, { user = null, first = null, emptyTitle = 'Nothing here yet', emptyText = '', newPill = null } = {}) {
+export function createFeed(root, { user = null, first = null, emptyTitle = 'Nothing here yet', emptyText = '' } = {}) {
   const cards = [];
   const known = new Set();
   let next = 0, loading = false, active = -1;
@@ -88,7 +141,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     const video = el('video');
     video.playsInline = true;
     video.setAttribute('playsinline', '');
-    video.muted = !soundOn;
+    video.muted = !soundOn || soundBlocked;
     video.preload = 'none';
     if (s.poster) video.poster = s.poster;
     allVideos.add(video);
@@ -104,10 +157,16 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     const meta = el('div', 'card-meta');
     info.append(who, meta);
 
-    const sound = el('button', 'sound', soundOn ? '🔊' : '🔇');
+    const audible = soundOn && !soundBlocked;
+    const sound = el('button', 'sound', audible ? '🔊' : '🔇');
     sound.type = 'button';
-    sound.setAttribute('aria-label', soundOn ? 'Mute' : 'Unmute');
-    sound.onclick = (e) => { e.stopPropagation(); setSound(!soundOn); card.video.play().catch(() => {}); };
+    sound.setAttribute('aria-label', audible ? 'Mute' : 'Unmute');
+    sound.onclick = (e) => {
+      e.stopPropagation();
+      if (tapJustUnmuted) return; // this tap already turned the sound on
+      setSound(!soundOn);
+      card.video.play().catch(() => {});
+    };
 
     const progress = el('div', 'card-progress');
     const bar = el('i');
@@ -138,8 +197,9 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
 
     node.append(video, top, info, share, talk, sound, progress, note);
 
-    // Tap the video: first tap turns sound on; after that it pauses/resumes.
+    // Tap the video: if sound is off, turn it on; otherwise pause/resume.
     video.onclick = () => {
+      if (tapJustUnmuted) return; // this tap already turned the sound on
       if (!soundOn) { setSound(true); video.play().catch(() => {}); return; }
       if (video.paused) video.play().catch(() => {}); else video.pause();
     };
@@ -224,7 +284,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
           if (done || ctrl.signal.aborted) break;
           if (value && value.length) await append(value);
           jumpToEdge(card);
-          if (cards[active] === card) v.play().catch(() => v.muted || mutedFallback(v));
+          if (cards[active] === card && v.paused) playWithSound(v);
         }
         if (ctrl.signal.aborted) return;
         if (ms.readyState === 'open') ms.endOfStream();
@@ -241,12 +301,6 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     if (card.stream.status !== 'live' || !v.buffered.length) return;
     const edge = v.buffered.end(v.buffered.length - 1);
     if (edge - v.currentTime > 3) v.currentTime = Math.max(0, edge - 1); // stay ~1s behind live
-  }
-
-  // Browsers may refuse to autoplay with sound; fall back to muted rather than not playing.
-  function mutedFallback(v) {
-    setSound(false);
-    v.play().catch(() => {});
   }
 
   function onEnded(card) {
@@ -269,8 +323,8 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
       const d = Math.abs(j - i);
       if (d <= 1) attach(card); else if (d > 2) detach(card);
       if (j === i) {
-        card.video.muted = !soundOn;
-        card.video.play().catch(() => mutedFallback(card.video));
+        currentVideo = card.video;
+        playWithSound(card.video);
       } else if (card.attached) {
         card.video.pause();
       }
@@ -326,8 +380,74 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     return loadMore();
   }
 
+  // ---------- someone just went live ----------
+  // A banner over the feed: "Sam just went live · Watch". Watch puts that live right after the
+  // broadcast on screen and scrolls to it. Hides itself after a while, or when the live ends.
+  const me = getUser();
+  const announced = new Set();
+  let bannerLives = [], bannerTimer = null;
+  const banner = el('div', 'live-banner');
+  banner.hidden = true;
+  banner.setAttribute('role', 'status');
+  let bannerPic = el('span'); // replaced by the person's picture on each show
+  const bannerText = el('div', 'live-banner-text');
+  const bannerWatch = el('button', 'btn', 'Watch');
+  bannerWatch.type = 'button';
+  const bannerClose = el('button', 'live-banner-close', '✕');
+  bannerClose.type = 'button';
+  bannerClose.setAttribute('aria-label', 'Dismiss');
+  banner.append(bannerPic, bannerText, bannerWatch, bannerClose);
+  document.body.append(banner);
+
+  function showBanner(list) {
+    bannerLives = list;
+    const s = list[0];
+    const pic = avatarNode(s.avatar, s.name, 'avatar xs');
+    bannerPic.replaceWith(pic);
+    bannerPic = pic;
+    bannerText.replaceChildren();
+    const name = el('strong', null, s.name);
+    const others = list.length - 1;
+    bannerText.append(name, others ? ` and ${others} ${others === 1 ? 'other' : 'others'} just went live` : ' just went live');
+    banner.hidden = false;
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(hideBanner, 12000);
+  }
+  function hideBanner() {
+    banner.hidden = true;
+    bannerLives = [];
+    clearTimeout(bannerTimer);
+  }
+  bannerClose.onclick = (e) => { e.stopPropagation(); hideBanner(); };
+  bannerWatch.onclick = (e) => {
+    e.stopPropagation();
+    const list = bannerLives;
+    hideBanner();
+    insertNext(list);
+  };
+  // Put broadcasts right after the one on screen (or at the top) and scroll to the first of them.
+  function insertNext(list) {
+    root.querySelector('.card-empty')?.remove();
+    let at = active + 1, firstCard = null;
+    for (const s of list) {
+      if (known.has(s.id)) {
+        firstCard ??= cards.find((c) => c.stream.id === s.id) ?? null;
+        continue;
+      }
+      known.add(s.id);
+      const card = makeCard(s);
+      const before = cards[at]?.node ?? null;
+      if (before) before.before(card.node); else root.append(card.node);
+      cards.splice(at, 0, card);
+      io.observe(card.node);
+      at++;
+      firstCard ??= card;
+    }
+    firstCard?.node.scrollIntoView({ behavior: 'smooth' });
+  }
+
   // ---------- keeping it fresh ----------
-  // Every 10s: update live viewer counts, and offer new lives that started since loading.
+  // Every few seconds: update live viewer counts, and announce lives that started since.
   async function poll() {
     try {
       const r = await fetch(query({ status: 'live', limit: 50 }));
@@ -337,15 +457,13 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
         const fresh = liveNow.get(card.stream.id);
         if (fresh && card.stream.status === 'live') { card.stream.viewers = fresh.viewers; render(card); }
       }
-      const unseen = items.filter((s) => !known.has(s.id)).length;
-      if (newPill) {
-        newPill.hidden = unseen === 0;
-        newPill.textContent = `${unseen} new ${unseen === 1 ? 'live' : 'lives'} ↑`;
-      }
+      const fresh = items.filter((s) => !known.has(s.id) && !announced.has(s.id) && !(me && s.userId === me.id));
+      fresh.forEach((s) => announced.add(s.id));
+      if (fresh.length) showBanner(fresh);
+      else if (bannerLives.length && !bannerLives.some((s) => liveNow.has(s.id))) hideBanner(); // they ended
     } catch {}
   }
-  if (newPill) newPill.onclick = () => { newPill.hidden = true; reset(); };
-  setInterval(poll, 10000);
+  setInterval(poll, POLL_MS);
   setInterval(() => cards.forEach(render), 30000); // "2m ago" etc.
 
   // Keyboard on desktop: arrows / j k move between broadcasts.

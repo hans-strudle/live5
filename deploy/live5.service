@@ -15,6 +15,10 @@ Environment=LIVE5_HOST=127.0.0.1
 # Caddy provides HTTPS; make sure the app never picks up a stray local certificate.
 Environment=LIVE5_TLS_KEY=/nonexistent
 Environment=LIVE5_DATA_DIR=/opt/live5/data
+# Contact address push services see on live alerts (Apple requires a real one). Set it with
+# `sudo systemctl edit live5` rather than here, e.g.:
+#   [Service]
+#   Environment=LIVE5_VAPID_SUBJECT=mailto:you@yourdomain.com
 Restart=always
 RestartSec=2
 NoNewPrivileges=true

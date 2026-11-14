@@ -5,6 +5,7 @@ import { readFile, writeFile, appendFile, rename, stat } from 'node:fs/promises'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, createReadStream } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { isFragmentedMp4, defragmentMp4 } from './mp4.mjs';
+import { loadVapid, cleanSubscription, sendPush } from './push.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -18,8 +19,11 @@ const STATIC = {
 // Scripts and styles: any top-level public/<name>.js or .css, looked up when requested, so a new
 // file works without restarting the server. The pattern allows no slashes or extra dots, so
 // nothing outside public/ can be reached.
-const ASSET = /^\/([a-z0-9][a-z0-9-]*)\.(js|css)$/i;
-const ASSET_TYPES = { js: 'text/javascript', css: 'text/css' };
+const ASSET = /^\/([a-z0-9][a-z0-9-]*)\.(js|css|svg|webmanifest)$/i;
+const ASSET_TYPES = {
+  js: 'text/javascript', css: 'text/css', svg: 'image/svg+xml', webmanifest: 'application/manifest+json',
+};
+const MAX_PUSH_SUBSCRIPTIONS = 20000;
 const MAX_POSTER_BYTES = 300 * 1024;
 const FINAL_PIECE_GRACE = 3; // seconds
 const clampInt = (v, min, max, fallback) => {
@@ -103,6 +107,48 @@ export function createApp({
       writeFileSync(path.join(streamDir, f), JSON.stringify(meta, null, 2));
     }
     streams.set(meta.id, { ...meta, viewers: new Set() });
+  }
+
+  // ---- Web Push: who wants a phone notification when someone goes live ----
+  // data/vapid.json is the server's push key pair; data/push.json the subscriptions
+  // ({ endpoint, keys, userId? }). A subscription tied to a user isn't told about their own lives.
+  const vapid = loadVapid(path.join(dataDir, 'vapid.json'));
+  const pushFile = path.join(dataDir, 'push.json');
+  const pushSubs = new Map(); // endpoint -> subscription
+  for (const sub of readJson(pushFile, [])) if (sub?.endpoint) pushSubs.set(sub.endpoint, sub);
+  // Push services want a contact for the sender: set LIVE5_VAPID_SUBJECT (mailto: or https: URL).
+  const vapidSubject = process.env.LIVE5_VAPID_SUBJECT || process.env.LIVE5_PUBLIC_URL || 'mailto:live5@example.com';
+  let pushWrite = Promise.resolve();
+  function savePushSubs() {
+    const snapshot = JSON.stringify([...pushSubs.values()], null, 2);
+    pushWrite = pushWrite.then(async () => {
+      await writeFile(`${pushFile}.tmp`, snapshot);
+      await rename(`${pushFile}.tmp`, pushFile);
+    }).catch((e) => console.error('saving push subscriptions failed', e));
+    return pushWrite;
+  }
+
+  // "Sam just went live": to every subscribed device except the broadcaster's own, a few at a
+  // time. Subscriptions the push service says are gone (404/410) are forgotten.
+  async function notifyLive(s) {
+    const u = users.get(s.userId);
+    const data = {
+      title: `${u?.name ?? 'Someone'} just went live`,
+      body: `Watch now — it's only ${maxSeconds} seconds.`,
+      url: `/watch/${s.id}`,
+      icon: avatarOf(s.userId),
+      tag: `live-${s.id}`,
+    };
+    const targets = [...pushSubs.values()].filter((sub) => sub.userId !== s.userId);
+    let removed = false;
+    for (let i = 0; i < targets.length; i += 10) {
+      await Promise.all(targets.slice(i, i + 10).map(async (sub) => {
+        const status = await sendPush(sub, data, vapid, vapidSubject, maxSeconds + 30);
+        if (status === 404 || status === 410) { pushSubs.delete(sub.endpoint); removed = true; }
+        else if (status >= 400) console.error(`push to ${new URL(sub.endpoint).host} failed: ${status}`);
+      }));
+    }
+    if (removed) savePushSubs();
   }
 
   let usersWrite = Promise.resolve();
@@ -325,6 +371,23 @@ export function createApp({
     if (url.pathname === '/api/config' && req.method === 'GET') {
       return json(res, 200, { maxSeconds, maxPerDay });
     }
+    // Web Push: GET /api/push/key (the server's public key for subscribing),
+    // POST /api/push/subscribe { endpoint, keys } (user headers optional), POST /api/push/unsubscribe { endpoint }.
+    if (url.pathname === '/api/push/key' && req.method === 'GET') return json(res, 200, { publicKey: vapid.publicKey });
+    if (url.pathname === '/api/push/subscribe' && req.method === 'POST') {
+      const sub = cleanSubscription(await readJsonBody(req, 4096));
+      if (!sub) return json(res, 400, { error: 'not a valid push subscription' });
+      if (!pushSubs.has(sub.endpoint) && pushSubs.size >= MAX_PUSH_SUBSCRIPTIONS) return json(res, 503, { error: 'too many subscriptions' });
+      const u = currentUser(req);
+      pushSubs.set(sub.endpoint, { ...sub, userId: u?.id ?? null, createdAt: pushSubs.get(sub.endpoint)?.createdAt ?? Date.now() });
+      await savePushSubs();
+      return json(res, 201, { ok: true });
+    }
+    if (url.pathname === '/api/push/unsubscribe' && req.method === 'POST') {
+      const body = await readJsonBody(req, 4096);
+      if (body && pushSubs.delete(String(body.endpoint ?? ''))) await savePushSubs();
+      return json(res, 200, { ok: true });
+    }
     if (parts[0] === 'api' && parts[1] === 'users') return handleUsers(req, res, parts);
     if (parts[0] === 'api' && parts[1] === 'streams') return handleStreams(req, res, url, parts);
     return json(res, 404, { error: 'not found' });
@@ -521,6 +584,7 @@ export function createApp({
       touch(s);
       streams.set(s.id, s);
       await saveStream(s);
+      notifyLive(s).catch((e) => console.error('sending live notifications failed', e)); // in the background
       return json(res, 201, { ...publicStream(s), token: s.token, ...dailyUsage(u) });
     }
 

@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>live5</title>
   <!--META-->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="live5">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="/app.css">
   <script src="/welcome.js" defer></script>
 </head>
@@ -12,14 +17,16 @@
   <header class="float-header">
     <a class="logo" href="/">live<span>5</span></a>
     <nav>
+      <button class="bell" id="bell" type="button" hidden></button>
       <a class="ghost-link" id="me" hidden>You</a>
       <a class="btn" href="/go">Go live</a>
     </nav>
   </header>
-  <button class="pill" id="new" type="button" hidden></button>
   <main class="feed" id="feed" aria-label="Broadcasts"></main>
   <script type="module">
     import { createFeed } from '/feed.js';
+    import { setupBell } from '/notify.js';
+    setupBell(document.getElementById('bell'));
     try {
       const me = JSON.parse(localStorage.getItem('live5:user') || 'null');
       if (me && me.id) { const a = document.getElementById('me'); a.href = `/u/${me.id}`; a.hidden = false; }
@@ -28,7 +35,6 @@
     const shared = /^\/watch\/([^/]+)$/.exec(location.pathname);
     createFeed(document.getElementById('feed'), {
       first: shared ? decodeURIComponent(shared[1]) : null,
-      newPill: document.getElementById('new'),
       emptyTitle: 'Nobody has gone live yet',
       emptyText: 'Be the first. Lives last 30 seconds and can’t be edited.',
     });

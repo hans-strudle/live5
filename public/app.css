@@ -75,6 +75,31 @@ img.avatar { background: #222; }
 .share-live { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; background: rgba(255,255,255,.15);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 
+/* "Sam just went live · Watch" banner over the feed. */
+.live-banner { position: fixed; z-index: 12; top: calc(64px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  width: min(calc(100vw - 24px), 420px); display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px;
+  border-radius: 999px; background: rgba(24,24,29,.92); border: 1px solid var(--line);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  animation: banner-in .25s ease-out; }
+.live-banner[hidden] { display: none; }
+.live-banner .avatar { box-shadow: 0 0 0 2px var(--live); }
+.live-banner-text { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-banner .btn { padding: 8px 16px; font-size: 14px; }
+.live-banner-close { border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; padding: 6px; cursor: pointer; }
+@keyframes banner-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Shown when the browser blocked sound until the next tap. */
+.sound-hint { position: fixed; z-index: 11; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  padding: 8px 16px; border-radius: 999px; background: rgba(0,0,0,.65); color: #fff; font-weight: 700; font-size: 14px;
+  pointer-events: none; }
+.sound-hint[hidden] { display: none; }
+
+/* Live alerts bell in the header. */
+.bell { pointer-events: auto; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0,0,0,.35); font: inherit; font-size: 18px; cursor: pointer; }
+.bell.on { background: rgba(255,45,85,.25); }
+.bell[hidden] { display: none; }
+
 /* Small confirmation, e.g. "Link copied". */
 .toast { position: fixed; left: 50%; bottom: calc(32px + env(safe-area-inset-bottom)); transform: translate(-50%, 12px);
   z-index: 50; padding: 10px 18px; border-radius: 999px; background: #fff; color: #000; font-weight: 700; font-size: 14px;

@@ -15,6 +15,8 @@
 - Daily limit: each user can start at most 5 lives in any rolling 24 hours, enforced server-side (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
 - First visit shows a welcome popup explaining the rules (`public/welcome.js`, once per device).
 - Comments are simple: plain text, one line, at most 200 characters, append-only (no editing or deleting), one every 3 seconds per user, tied to the user's UUID like broadcasts (owner request, 2026-11-14).
+- Going live is announced: an in-feed banner (5-second checks) and opt-in Web Push "X just went live" notifications to all subscribed devices except the broadcaster's own (owner request, 2026-11-14). There's no following yet, so alerts cover everyone.
+- Web Push stays dependency-free (`push.mjs`): only send to known push-service hosts (prevents the server being used to POST to arbitrary URLs).
 - No editing: no trimming, replacing, deleting or reordering chunks; chunks are accepted only in sequence, only while live, only with the broadcast token.
 
 ## Engineering

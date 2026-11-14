@@ -5,15 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Profile · live5</title>
   <!--META-->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="live5">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="/app.css">
   <script src="/welcome.js" defer></script>
 </head>
 <body class="feed-page">
   <header class="float-header">
     <a class="logo" href="/">live<span>5</span></a>
-    <nav><a class="btn" href="/go">Go live</a></nav>
+    <nav><button class="bell" id="bell" type="button" hidden></button><a class="btn" href="/go">Go live</a></nav>
   </header>
-  <button class="pill" id="new" type="button" hidden></button>
   <main class="feed" id="feed">
     <!-- Profile heading at the top of the page; it scrolls away with the feed, and this
          person's lives follow straight after it. -->
@@ -28,6 +32,8 @@
   </main>
   <script type="module">
     import { createFeed, avatarNode } from '/feed.js';
+    import { setupBell } from '/notify.js';
+    setupBell(document.getElementById('bell'));
     const $ = (x) => document.getElementById(x);
     const id = decodeURIComponent(location.pathname.split('/').pop());
     let me = null;
@@ -52,7 +58,6 @@
       $('you').hidden = !(me && me.id === u.id);
       createFeed($('feed'), {
         user: u.id,
-        newPill: $('new'),
         emptyTitle: 'No lives yet',
         emptyText: me && me.id === u.id ? 'Your lives will show up here.' : `${u.name} hasn’t gone live yet.`,
       });

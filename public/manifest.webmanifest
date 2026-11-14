@@ -1,0 +1,13 @@
+{
+  "name": "live5",
+  "short_name": "live5",
+  "description": "Live for 30 seconds. No edits, no uploads.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d0d10",
+  "theme_color": "#0d0d10",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
