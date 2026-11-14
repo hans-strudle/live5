@@ -15,6 +15,7 @@
 - Daily limit: each user can start at most 5 lives in any rolling 24 hours, enforced server-side (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
 - First visit shows a welcome popup explaining the rules (`public/welcome.js`, once per device).
 - Comments are simple: plain text, one line, at most 200 characters, append-only (no editing or deleting), one every 3 seconds per user, tied to the user's UUID like broadcasts (owner request, 2026-11-14).
+- Likes are private: anyone can like (anonymous per-device viewer id, no name needed), but like counts are never shown to viewers or broadcasters and never returned by the API (owner request, 2026-11-14).
 - Going live is announced: an in-feed banner (5-second checks) and opt-in Web Push "X just went live" notifications to all subscribed devices except the broadcaster's own (owner request, 2026-11-14). There's no following yet, so alerts cover everyone.
 - Web Push stays dependency-free (`push.mjs`): only send to known push-service hosts (prevents the server being used to POST to arbitrary URLs).
 - No editing: no trimming, replacing, deleting or reordering chunks; chunks are accepted only in sequence, only while live, only with the broadcast token.
@@ -24,7 +25,9 @@
 - Don't do manual testing: no browser pages, screenshots, page inspection, or temporary servers to try things out. The owner does all manual and device testing; build the change, then say what to check (owner decision, 2026-11-13).
 
 - Zero runtime dependencies so far; keep it that way unless there is a clear need.
-- `npm test` must pass for server changes.
+- `npm test` must pass for server changes. Each test runs its own server on a temporary data folder (never the real `data/`) and shuts it down even on failure. Automated tests are fine; "no manual testing" means no browser or device checks.
+- Finished replays are served as cacheable (`immutable`) only once final (non-MP4, or the replay copy exists); live responses are `no-store` and have no `accept-ranges`, which the feed uses to tell a live from a finished replay.
+- Stream file reads must handle errors (`.on('error', ...)` before `.pipe`): an unhandled stream error crashes the whole server.
 - Phones need HTTPS for the camera (`npm run cert`). The desktop browser pane cannot use a camera. Replays converted by `mp4.mjs` were checked in Chromium only; iOS Safari and Firefox playback are still unverified.
 - Viewer playback relies on Media Source; keep the broadcaster preferring MP4 so iOS viewers can decode Android broadcasts.
 - Replays of MP4 recordings are served from `<id>.replay.mp4`, a plain (non-fragmented) copy made by `mp4.mjs` when the broadcast ends. Never modify the original recording.
@@ -39,4 +42,4 @@
 - Scaling: storage is local files in `data/`, served by a single process. Nothing is ever deleted (no retention limit).
 - Recovering a profile on a new device or after clearing browser data.
 - Rate limits on creating users (and per IP/device), so the daily limit can't be bypassed with fresh profiles.
-- `test/server.test.mjs` predates users and disk storage. It still sends `name` when going live and doesn't set a temporary `dataDir`, so it needs updating before it is run again.
+- Storage growth: each MP4 live is kept twice (original + replay copy), roughly 11 MB per 30-second live at 1.5 Mbps. Options: drop originals after conversion, lower the bitrate, or expire old lives (review, 2026-11-14).

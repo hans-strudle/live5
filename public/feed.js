@@ -4,7 +4,7 @@
 
 import { openComments } from '/comments.js';
 import { shareStream, shareIcon } from '/share.js';
-import { getUser } from '/me.js';
+import { getUser, viewerId } from '/me.js';
 
 const MS = window.ManagedMediaSource || window.MediaSource;
 const PAGE = 8;
@@ -53,6 +53,32 @@ function updateSoundUi() {
     document.body.append(soundHint);
   }
   if (soundHint) soundHint.hidden = !(soundOn && soundBlocked);
+}
+
+// ---------- likes ----------
+// Private: a filled heart for the viewer, a quiet record on the server, no counts shown anywhere.
+// What this device liked is remembered locally so hearts stay filled.
+const LIKED_KEY = 'live5:liked';
+const liked = new Set((() => { try { return JSON.parse(localStorage.getItem(LIKED_KEY) || '[]'); } catch { return []; } })());
+function setLiked(streamId, on) {
+  if (on) liked.add(streamId); else liked.delete(streamId);
+  try { localStorage.setItem(LIKED_KEY, JSON.stringify([...liked].slice(-2000))); } catch {}
+  const viewer = viewerId();
+  if (viewer) {
+    fetch(`/api/streams/${streamId}/like`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ viewer, liked: on }),
+    }).catch(() => {});
+  }
+}
+function heartIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '24');
+  svg.setAttribute('height', '24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = '<path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.4 4.5 6.9 4.5c2 0 3.6 1.1 5.1 3 1.5-1.9 3.1-3 5.1-3 3.5 0 5.5 3.5 4.2 6.8-1.8 4.6-9.3 9.2-9.3 9.2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>';
+  return svg;
 }
 
 function setSound(on) {
@@ -195,13 +221,57 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     share.append(shareIcon());
     share.onclick = (e) => { e.stopPropagation(); shareStream(card.stream); };
 
-    node.append(video, top, info, share, talk, sound, progress, note);
+    // Like: a heart that fills in. Private — no counts anywhere.
+    const like = el('button', 'like-btn');
+    like.type = 'button';
+    like.append(heartIcon());
+    const showLiked = (on) => {
+      like.classList.toggle('on', on);
+      like.setAttribute('aria-pressed', String(on));
+      like.setAttribute('aria-label', on ? 'Unlike' : 'Like');
+    };
+    showLiked(liked.has(s.id));
+    const doLike = (on) => {
+      if (on !== liked.has(s.id)) setLiked(s.id, on);
+      showLiked(on);
+      if (on) { like.classList.remove('pop'); void like.offsetWidth; like.classList.add('pop'); }
+    };
+    like.onclick = (e) => { e.stopPropagation(); doLike(!liked.has(s.id)); };
 
-    // Tap the video: if sound is off, turn it on; otherwise pause/resume.
-    video.onclick = () => {
-      if (tapJustUnmuted) return; // this tap already turned the sound on
-      if (!soundOn) { setSound(true); video.play().catch(() => {}); return; }
-      if (video.paused) video.play().catch(() => {}); else video.pause();
+    // Double-tap the video to like (never un-likes), with a big heart where the finger was.
+    function burst(x, y) {
+      const r = node.getBoundingClientRect();
+      const b = el('div', 'like-burst');
+      b.append(heartIcon());
+      b.style.left = `${x - r.left}px`;
+      b.style.top = `${y - r.top}px`;
+      node.append(b);
+      setTimeout(() => b.remove(), 800);
+    }
+
+    node.append(video, top, info, like, share, talk, sound, progress, note);
+
+    // Tap the video: if sound is off, turn it on; otherwise pause/resume. Double-tap: like.
+    // A single tap waits a moment so a second tap can make it a double-tap instead.
+    const DOUBLE_TAP_MS = 300;
+    let lastTap = 0, tapTimer = null;
+    video.onclick = (e) => {
+      const now = Date.now();
+      if (now - lastTap < DOUBLE_TAP_MS) {
+        clearTimeout(tapTimer);
+        tapTimer = null;
+        lastTap = 0;
+        doLike(true);
+        burst(e.clientX, e.clientY);
+        return;
+      }
+      lastTap = now;
+      if (tapJustUnmuted) return; // this tap already turned the sound on (a second tap can still like)
+      tapTimer = setTimeout(() => {
+        tapTimer = null;
+        if (!soundOn) { setSound(true); video.play().catch(() => {}); return; }
+        if (video.paused) video.play().catch(() => {}); else video.pause();
+      }, DOUBLE_TAP_MS);
     };
     video.onended = () => onEnded(card);
     video.ontimeupdate = () => {
@@ -238,13 +308,23 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     const s = card.stream;
     const url = `/api/streams/${s.id}/video`;
     const type = s.status === 'live' ? mseType(s.type) : null;
-    if (type) {
-      playLive(card, type, url);
-    } else {
-      card.video.loop = false; // onEnded decides: next broadcast, or play this one again
-      card.video.preload = 'auto';
-      card.video.src = url;
-    }
+    if (type) playLive(card, type, url);
+    else playReplay(card, url);
+  }
+
+  // A finished broadcast: a normal video file (the server supports seeking and caching).
+  function playReplay(card, url) {
+    card.video.loop = false; // onEnded decides: next broadcast, or play this one again
+    card.video.preload = 'auto';
+    card.video.src = url;
+  }
+
+  // The live on this card has ended (seen by the 5-second check, or by the server answering with
+  // the finished replay): from now on play it as a replay.
+  function markEnded(card) {
+    if (card.stream.status !== 'live') return;
+    card.stream = { ...card.stream, status: 'ended', endedAt: card.stream.endedAt ?? Date.now() };
+    render(card);
   }
 
   function detach(card) {
@@ -278,6 +358,18 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
       });
       try {
         const res = await fetch(url, { signal: ctrl.signal });
+        // The live ended before we got here: the server sent the finished replay, which Media
+        // Source can't take. Play it as an ordinary video instead.
+        if (res.headers.get('accept-ranges') === 'bytes') {
+          ctrl.abort();
+          card.abort = null;
+          if (card.objectUrl) URL.revokeObjectURL(card.objectUrl);
+          card.objectUrl = null;
+          markEnded(card);
+          playReplay(card, url);
+          if (cards[active] === card) playWithSound(v);
+          return;
+        }
         const reader = res.body.getReader();
         for (;;) {
           const { value, done } = await reader.read();
@@ -288,8 +380,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
         }
         if (ctrl.signal.aborted) return;
         if (ms.readyState === 'open') ms.endOfStream();
-        card.stream = { ...card.stream, status: 'ended', endedAt: Date.now() };
-        render(card);
+        markEnded(card);
       } catch {
         if (!ctrl.signal.aborted) card.showNote('Lost the connection to this live.');
       }
@@ -455,7 +546,11 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
       const liveNow = new Map(items.map((s) => [s.id, s]));
       for (const card of cards) {
         const fresh = liveNow.get(card.stream.id);
-        if (fresh && card.stream.status === 'live') { card.stream.viewers = fresh.viewers; render(card); }
+        if (card.stream.status !== 'live') continue;
+        if (fresh) { card.stream.viewers = fresh.viewers; render(card); }
+        // Ended since the feed loaded. A card that's already streaming it finishes on its own;
+        // any other will play it as a replay.
+        else if (!card.attached) markEnded(card);
       }
       const fresh = items.filter((s) => !known.has(s.id) && !announced.has(s.id) && !(me && s.userId === me.id));
       fresh.forEach((s) => announced.add(s.id));

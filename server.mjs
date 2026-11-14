@@ -54,6 +54,7 @@ function cleanText(raw, max) {
 export const cleanName = (raw) => cleanText(raw, MAX_NAME);
 export const cleanComment = (raw) => cleanText(raw, MAX_COMMENT);
 const COMMENT_GAP_MS = 3000; // one comment every 3 seconds per user
+const VIEWER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // anonymous per-device id (likes)
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
@@ -86,6 +87,7 @@ export function createApp({
   maxChunkBytes = 4 * 1024 * 1024,
   idleSeconds = 10,
   maxPerDay = Number(process.env.LIVE5_MAX_PER_DAY) || 5,
+  finalPieceGrace = FINAL_PIECE_GRACE,
   dataDir = process.env.LIVE5_DATA_DIR || path.join(ROOT, 'data'),
   tls = null,
 } = {}) {
@@ -170,6 +172,7 @@ export function createApp({
       id: s.id, userId: s.userId, type: s.type, ext: s.ext, status: s.status,
       startedAt: s.startedAt, endedAt: s.endedAt ?? null, endReason: s.endReason ?? null, bytes: s.bytes,
       hasPoster: !!s.hasPoster, replay: s.replay ?? null, empty: !!s.empty, commentCount: s.commentCount ?? 0,
+      likeCount: s.likeCount ?? 0, // kept for later; never sent to viewers or the broadcaster
     };
     s.saving = (s.saving ?? Promise.resolve())
       .then(() => writeFile(path.join(streamDir, `${s.id}.json`), JSON.stringify(meta, null, 2)))
@@ -271,6 +274,22 @@ export function createApp({
   }
 
   // ---- comments: data/streams/<id>.comments.jsonl, one JSON object per line, loaded on first use ----
+  // ---- likes: data/streams/<id>.likes.jsonl, one {viewer, liked, at} line per change ----
+  // Private: likes aren't shown to anyone. One like per device (anonymous viewer id), toggleable.
+  const likesFile = (s) => path.join(streamDir, `${s.id}.likes.jsonl`);
+  function loadLikes(s) {
+    s.likes ??= readFile(likesFile(s), 'utf8')
+      .then((text) => {
+        const set = new Set();
+        for (const line of text.split('\n')) {
+          try { const e = JSON.parse(line); if (e.liked) set.add(e.viewer); else set.delete(e.viewer); } catch {}
+        }
+        return set;
+      })
+      .catch(() => new Set());
+    return s.likes;
+  }
+
   const commentsFile = (s) => path.join(streamDir, `${s.id}.comments.jsonl`);
   const lastCommentAt = new Map(); // userId -> time of their last comment (in memory)
   function loadComments(s) {
@@ -580,7 +599,7 @@ export function createApp({
       };
       // The page stops recording at maxSeconds; the extra moment lets its final piece (which some
       // recorders only hand over when stopped) arrive before the hard cap closes the broadcast.
-      s.capTimer = setTimeout(() => endStream(s, 'time-limit'), (maxSeconds + FINAL_PIECE_GRACE) * 1000);
+      s.capTimer = setTimeout(() => endStream(s, 'time-limit'), (maxSeconds + finalPieceGrace) * 1000);
       touch(s);
       streams.set(s.id, s);
       await saveStream(s);
@@ -664,8 +683,28 @@ export function createApp({
     if (parts[3] === 'poster' && req.method === 'GET') {
       if (!s.hasPoster) return json(res, 404, { error: 'no preview' });
       res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=86400' });
-      createReadStream(posterFile(s)).on('error', () => res.end()).pipe(res);
+      createReadStream(posterFile(s)).on('error', () => res.destroy()).pipe(res);
       return;
+    }
+
+    // POST /api/streams/:id/like { viewer, liked } — like (or un-like) from this device. Nothing
+    // about likes is ever returned to anyone.
+    if (parts[3] === 'like' && parts.length === 4 && req.method === 'POST') {
+      if (s.empty) return json(res, 404, { error: 'no such stream' });
+      const body = await readJsonBody(req);
+      const viewer = String(body?.viewer ?? '').toLowerCase();
+      if (!VIEWER_ID.test(viewer)) return json(res, 400, { error: 'bad viewer id' });
+      const liked = body.liked !== false;
+      const set = await loadLikes(s);
+      if (liked !== set.has(viewer)) {
+        if (liked) set.add(viewer); else set.delete(viewer);
+        s.likeCount = set.size;
+        s.likeWrite = (s.likeWrite ?? Promise.resolve())
+          .then(() => appendFile(likesFile(s), `${JSON.stringify({ viewer, liked, at: Date.now() })}\n`))
+          .catch((e) => console.error(`saving like on ${s.id} failed`, e));
+        saveStream(s);
+      }
+      return json(res, 200, { ok: true, liked });
     }
 
     // Comments: GET /api/streams/:id/comments?from=n (n = how many the caller already has),
@@ -731,7 +770,14 @@ export function createApp({
     let total;
     try { total = (await stat(file)).size; } catch { total = 0; }
     if (!total) return json(res, 404, { error: 'no video was recorded' });
-    const headers = { 'content-type': s.type, 'accept-ranges': 'bytes', 'cache-control': 'no-store' };
+    // A finished replay never changes, so browsers may keep it: scrolling back, looping or
+    // preloading doesn't download it again. (Only once it's final: an MP4 still waiting for its
+    // replay copy isn't cached.)
+    const final = s.ext !== 'mp4' || !!s.replay;
+    const headers = {
+      'content-type': s.type, 'accept-ranges': 'bytes',
+      'cache-control': final ? 'public, max-age=31536000, immutable' : 'no-store',
+    };
     const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
     let start = 0, end = total - 1, code = 200;
     if (m && !(m[1] === '' && m[2] === '')) {
@@ -745,7 +791,9 @@ export function createApp({
       headers['content-range'] = `bytes ${start}-${end}/${total}`;
     }
     res.writeHead(code, { ...headers, 'content-length': end - start + 1 });
-    createReadStream(file, { start, end }).pipe(res);
+    // If the file can't be read mid-way (e.g. deleted while someone watches), just drop this
+    // response; an unhandled stream error would take the whole server down.
+    createReadStream(file, { start, end }).on('error', () => res.destroy()).pipe(res);
   }
 
   const handler = (req, res) => {

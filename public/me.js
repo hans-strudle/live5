@@ -17,6 +17,22 @@ export function clearUser() {
   try { localStorage.removeItem(KEY); } catch {}
 }
 
+// An anonymous id for this device, separate from any profile: lets someone like without giving a
+// name. Created on first use and kept in localStorage.
+export function viewerId() {
+  const KEY_V = 'live5:viewer';
+  try {
+    let id = localStorage.getItem(KEY_V);
+    if (!id) {
+      id = crypto.randomUUID ? crypto.randomUUID()
+        : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) =>
+          (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16));
+      localStorage.setItem(KEY_V, id);
+    }
+    return id;
+  } catch { return null; }
+}
+
 export const authHeaders = (u) => ({ 'content-type': 'application/json', 'x-user-id': u.id, 'x-user-secret': u.secret });
 
 // A small popup asking for a name, shown over whatever is on screen (the camera, the comment

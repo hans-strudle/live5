@@ -70,6 +70,28 @@ img.avatar { background: #222; }
 .share-btn { position: absolute; right: 12px; bottom: calc(150px + env(safe-area-inset-bottom)); width: 44px; height: 44px;
   border-radius: 50%; border: 0; display: grid; place-items: center; background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
 
+/* Like on feed cards, top of the right-hand stack. Fills red when liked; no counts. */
+.like-btn { position: absolute; right: 12px; bottom: calc(206px + env(safe-area-inset-bottom)); width: 44px; height: 44px;
+  border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
+.like-btn svg { fill: none; transition: fill .15s; }
+.like-btn.on { color: var(--live); }
+.like-btn.on svg { fill: var(--live); }
+.like-btn.pop svg { animation: like-pop .35s ease-out; }
+@keyframes like-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+
+/* Double-tap like: a big heart where the finger was. */
+.card video { touch-action: manipulation; } /* no double-tap zoom on phones */
+.like-burst { position: absolute; z-index: 3; width: 110px; height: 110px; margin: -55px 0 0 -55px; pointer-events: none;
+  color: var(--live); filter: drop-shadow(0 4px 16px rgba(0,0,0,.45)); animation: like-burst .8s ease-out forwards; }
+.like-burst svg { width: 100%; height: 100%; fill: var(--live); }
+@keyframes like-burst {
+  0% { opacity: 0; transform: scale(.4) rotate(-12deg); }
+  20% { opacity: 1; transform: scale(1.1) rotate(-6deg); }
+  35% { transform: scale(.95) rotate(-6deg); }
+  70% { opacity: 1; transform: scale(1) translateY(-10px) rotate(-6deg); }
+  100% { opacity: 0; transform: scale(1.05) translateY(-60px) rotate(-6deg); }
+}
+
 /* Share on the Go live page while live. */
 .studio .share { display: grid; justify-items: center; gap: 6px; }
 .share-live { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; background: rgba(255,255,255,.15);
