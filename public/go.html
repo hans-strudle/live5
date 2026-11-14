@@ -20,6 +20,8 @@
      press Go live. -->
 <div id="studio" class="studio">
   <video id="cam" autoplay muted playsinline></video>
+  <!-- After a live: the last camera frame stays on screen instead of going black. -->
+  <img class="endframe" id="endframe" alt="" hidden>
   <div class="studio-top">
     <a class="logo" href="/" aria-label="Back to live5">live<span>5</span></a>
     <div class="badge" id="badge">OFF AIR</div>
@@ -36,6 +38,16 @@
     <p class="quota" id="quota" hidden></p>
     <p class="studio-msg" id="msg">Starting camera…</p>
     <p class="share" id="share" hidden></p>
+    <!-- End screen: shown once a live has ended. -->
+    <div class="end-panel" id="end" hidden>
+      <h2 id="end-title">Your live has ended</h2>
+      <p id="end-sub"></p>
+      <div class="end-actions">
+        <button class="btn" id="replay" type="button">▶ Watch replay</button>
+        <button class="btn ghost-light" id="end-share" type="button">Share</button>
+      </div>
+      <p class="end-links"><a href="/go">Go live again</a> · <a id="end-profile" href="/">Your profile</a> · <a href="/">Home</a></p>
+    </div>
   </div>
 </div>
 <script type="module">
@@ -44,6 +56,7 @@
   const $ = (id) => document.getElementById(id);
   const cam = $('cam'), go = $('go'), stop = $('stop'), retry = $('retry'), msg = $('msg');
   let media, recorder, stream, mime, seq = 0, queue = Promise.resolve(), tick, ending = false;
+  let startedAt = 0, endDone = Promise.resolve(); // when the live started; resolves once the server has ended it
 
   // MP4 (H.264/AAC) first: it plays on iOS and Android alike. WebM is the fallback.
   function pickMime(hasAudio) {
@@ -197,27 +210,77 @@
     }).catch(() => finish('Connection lost. The broadcast ended.'));
   }
 
+  // Keep the last camera frame on screen (as the preview showed it) so ending isn't a black screen.
+  function freezeFrame() {
+    if (!cam.videoWidth) return;
+    try {
+      const c = document.createElement('canvas');
+      c.width = cam.videoWidth;
+      c.height = cam.videoHeight;
+      c.getContext('2d').drawImage(cam, 0, 0);
+      $('endframe').src = c.toDataURL('image/jpeg', 0.85);
+      $('endframe').hidden = false;
+    } catch {}
+  }
+
   function finish(text) {
     if (ending) return;
     ending = true;
     clearInterval(tick);
+    freezeFrame();
     // Stopping hands over the last recorded piece (on Android Chrome this can be several
     // seconds of video). Wait for it to be sent before ending the broadcast.
     const stopped = recorder && recorder.state !== 'inactive'
       ? new Promise((resolve) => { recorder.addEventListener('stop', resolve, { once: true }); recorder.stop(); })
       : Promise.resolve();
     if (stream) {
-      stopped.then(() => queue).then(() => fetch(`/api/streams/${stream.id}/end`, {
+      endDone = stopped.then(() => queue).then(() => fetch(`/api/streams/${stream.id}/end`, {
         method: 'POST', headers: { 'x-broadcast-token': stream.token },
-      }).catch(() => {}));
+      })).catch(() => {});
     }
     stopped.then(() => media.getTracks().forEach((t) => t.stop()));
     $('badge').textContent = 'ENDED';
     $('badge').classList.remove('on');
+    $('timer').hidden = true;
     stop.hidden = true;
-    msg.innerHTML = stream
-      ? `${text} <a href="/watch/${stream.id}">Watch the replay</a> · <a href="/u/${user.id}">Your profile</a> · <a href="/go">Go live again</a>`
-      : `${text} <a href="/go">Try again</a>`;
+    if (!stream) { // never went live (e.g. couldn't start): just say so
+      msg.innerHTML = `${text} <a href="/go">Try again</a>`;
+      return;
+    }
+    showEndScreen(text);
+  }
+
+  // The end screen: what happened, how long it was, and what next (replay, share, go again).
+  function showEndScreen(text) {
+    const secs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+    $('end-title').textContent = text === 'Time is up.' ? 'That’s a wrap!' : 'Your live has ended';
+    $('end-sub').textContent = `${secs} second${secs === 1 ? '' : 's'} live${text === 'Time is up.' ? ' — the full time' : ''}. ${text === 'Time is up.' || text === 'You ended the broadcast.' ? '' : text}`.trim();
+    $('end-profile').href = `/u/${user.id}`;
+    $('as').hidden = true;
+    $('share').hidden = true;
+    go.hidden = true;
+    msg.textContent = '';
+    $('end').hidden = false;
+
+    $('end-share').onclick = () => shareStream({ ...stream, name: user.name, status: 'ended' });
+    // Play the replay right here, once the last piece has been sent and the server has it.
+    $('replay').onclick = async () => {
+      $('replay').disabled = true;
+      $('replay').textContent = 'Loading replay…';
+      await endDone; // last piece sent and the broadcast closed, so the replay is complete
+      cam.srcObject = null;
+      cam.classList.add('replay');
+      cam.src = `/api/streams/${stream.id}/video`;
+      cam.muted = false; // this tap allows sound
+      cam.loop = true;
+      cam.onplaying = () => {
+        $('endframe').hidden = true;
+        $('replay').hidden = true;
+        $('end-title').textContent = 'Your replay';
+      };
+      cam.onerror = () => { $('replay').disabled = false; $('replay').textContent = '▶ Watch replay'; };
+      cam.play().catch(() => { cam.muted = true; cam.play().catch(() => {}); });
+    };
   }
 
   go.onclick = async () => {
@@ -266,7 +329,8 @@
     created();
     setTimeout(() => sendPreview().catch(() => {}), 800);
 
-    const started = Date.now(), limit = stream.maxSeconds * 1000;
+    startedAt = Date.now();
+    const started = startedAt, limit = stream.maxSeconds * 1000;
     go.hidden = true; stop.hidden = false;
     $('badge').textContent = 'LIVE'; $('badge').classList.add('on');
     $('timer').hidden = false;

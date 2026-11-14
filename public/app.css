@@ -225,6 +225,24 @@ img.avatar { background: #222; }
 .name-actions { display: flex; gap: 10px; }
 .name-actions .btn { flex: 1; }
 
+/* After a live: the frozen last frame (mirrored like the preview), then the replay (not mirrored). */
+.endframe { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.endframe[hidden] { display: none; }
+.studio video.replay { transform: none; }
+.end-panel { width: min(100%, 360px); display: grid; gap: 10px; justify-items: center; padding: 18px 16px 14px;
+  border-radius: 20px; background: rgba(0,0,0,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.end-panel[hidden] { display: none; }
+.end-panel h2 { margin: 0; font-size: 22px; }
+.end-panel p { margin: 0; }
+#end-sub { color: rgba(255,255,255,.8); font-size: 14px; }
+.end-panel #end-sub:empty { display: none; }
+.end-actions { display: flex; gap: 10px; width: 100%; }
+.end-actions .btn { flex: 1; padding: 12px 14px; }
+.end-actions .btn[hidden] { display: none; }
+.btn.ghost-light { background: rgba(255,255,255,.18); color: #fff; }
+.end-links { font-size: 14px; color: rgba(255,255,255,.7); }
+.end-links a { color: #fff; }
+
 .go-btn { min-width: 200px; padding: 16px 32px; font-size: 18px; box-shadow: 0 6px 24px rgba(255,45,85,.45); }
 .go-btn[disabled] { opacity: .55; box-shadow: none; }
 .go-btn.end { background: #fff; color: #000; box-shadow: none; }
