@@ -26,8 +26,9 @@ const clampInt = (v, min, max, fallback) => {
   const n = Number.parseInt(v, 10);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
-// /watch/:streamId and /u/:userId are single-page views that load their data from the API.
-const PAGES = { watch: 'watch.html', u: 'profile.html' };
+// /watch/:streamId (a shared link: the main feed, starting with that broadcast) and /u/:userId
+// (a profile) are pages that load their data from the API.
+const PAGES = { watch: 'index.html', u: 'profile.html' };
 
 // No logins. Each device gets a user: a public UUID (used in profile links and to tie
 // broadcasts to the person) plus a private key the device keeps to act as that user.
@@ -544,7 +545,10 @@ export function createApp({
     const s = streams.get(parts[2]);
     if (!s) return json(res, 404, { error: 'no such stream' });
 
-    if (parts.length === 3 && req.method === 'GET') return json(res, 200, publicStream(s));
+    if (parts.length === 3 && req.method === 'GET') {
+      if (s.empty) return json(res, 404, { error: 'no such stream' }); // recorded nothing to show
+      return json(res, 200, publicStream(s));
+    }
 
     // POST /api/streams/:id/chunks?seq=n — append-only, in order, one at a time, while live.
     if (parts[3] === 'chunks' && req.method === 'POST') {

@@ -24,7 +24,10 @@
       const me = JSON.parse(localStorage.getItem('live5:user') || 'null');
       if (me && me.id) { const a = document.getElementById('me'); a.href = `/u/${me.id}`; a.hidden = false; }
     } catch {}
+    // A shared link (/watch/<id>) opens this same feed with that broadcast first.
+    const shared = /^\/watch\/([^/]+)$/.exec(location.pathname);
     createFeed(document.getElementById('feed'), {
+      first: shared ? decodeURIComponent(shared[1]) : null,
       newPill: document.getElementById('new'),
       emptyTitle: 'Nobody has gone live yet',
       emptyText: 'Be the first. Lives last 30 seconds and can’t be edited.',

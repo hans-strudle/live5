@@ -10,6 +10,7 @@
 - Profile pictures are always the preview frame of the user's latest non-empty live; there's no picture picker.
 - Shared links must preview well: pages carry server-rendered Open Graph/Twitter tags (placeholder `<!--META-->` in each page's head), and `/oembed` answers for `/watch/:id` and `/u/:id`. Escape everything user-provided that goes into them.
 - The home page and profiles are a full-screen vertical feed, one broadcast per screen (`public/feed.js`).
+- No separate watch page: a shared link (`/watch/<id>`) serves the main feed with that broadcast first, then the rest of the feed auto-plays (owner decision, 2026-11-14). The server still fills in that link's preview tags.
 - The only non-video file the server accepts is the preview JPEG. It's grabbed from the live camera by `/go`, and the server accepts it only with the broadcast token, only while live, only once, up to 300 KB. It's a cover image, not an upload feature: there is no image picker.
 - Daily limit: each user can start at most 5 lives in any rolling 24 hours, enforced server-side (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
 - First visit shows a welcome popup explaining the rules (`public/welcome.js`, once per device).

@@ -61,7 +61,8 @@ function el(tag, cls, text) {
   return n;
 }
 
-export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet', emptyText = '', newPill = null } = {}) {
+// first: a broadcast id to show before everything else (a shared link), then the feed as usual.
+export function createFeed(root, { user = null, first = null, emptyTitle = 'Nothing here yet', emptyText = '', newPill = null } = {}) {
   const cards = [];
   const known = new Set();
   let next = 0, loading = false, active = -1;
@@ -278,6 +279,15 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
   }
 
   // ---------- data ----------
+  function addCard(s) {
+    if (known.has(s.id)) return; // e.g. the shared broadcast turning up again in the feed
+    known.add(s.id);
+    const card = makeCard(s);
+    cards.push(card);
+    root.append(card.node);
+    io.observe(card.node);
+  }
+
   async function loadMore() {
     if (loading || next == null) return;
     loading = true;
@@ -285,14 +295,7 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
       const r = await fetch(query({ offset: next, limit: PAGE }));
       const page = await r.json();
       next = page.next;
-      for (const s of page.items) {
-        if (known.has(s.id)) continue;
-        known.add(s.id);
-        const card = makeCard(s);
-        cards.push(card);
-        root.append(card.node);
-        io.observe(card.node);
-      }
+      for (const s of page.items) addCard(s);
       if (!cards.length) showEmpty();
     } catch {
       if (!cards.length) showEmpty('Could not load the feed. Pull down or reload to try again.');
@@ -355,6 +358,18 @@ export function createFeed(root, { user = null, emptyTitle = 'Nothing here yet',
     target.node.scrollIntoView({ behavior: 'smooth' });
   });
 
-  loadMore();
+  // A shared link: that broadcast plays first, then the feed continues (auto-advancing) from the top.
+  (async () => {
+    if (first) {
+      try {
+        const r = await fetch(`/api/streams/${encodeURIComponent(first)}`);
+        if (r.ok) {
+          const s = await r.json();
+          if (!user || s.userId === user) addCard(s);
+        }
+      } catch {}
+    }
+    loadMore();
+  })();
   return { reset };
 }
