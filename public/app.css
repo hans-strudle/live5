@@ -77,17 +77,17 @@ img.avatar { background: #222; }
   border: 0; border-radius: 999px; padding: 8px 16px; background: var(--live); color: var(--live-fg); font: inherit;
   font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
 
-/* Compact profile bar, floating under the header on profile pages. */
-.profile-bar { position: fixed; z-index: 9; top: calc(60px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-  width: calc(min(100vw, 100dvh * 9 / 16) - 24px); display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 8px;
-  border-radius: 999px; background: rgba(0,0,0,.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-@media (max-width: 600px) { .profile-bar { width: calc(100vw - 24px); } }
+/* Profile heading: first thing on a profile page, scrolls away with the feed. */
+.profile-head { scroll-snap-align: start; display: flex; align-items: center; gap: 16px;
+  width: 100%; max-width: calc(100dvh * 9 / 16); margin: 0 auto;
+  padding: calc(72px + env(safe-area-inset-top)) 16px 20px; }
+@media (max-width: 600px) { .profile-head { max-width: none; } }
+.avatar.lg { width: 88px; height: 88px; font-size: 36px; }
 .profile-text { min-width: 0; flex: 1; }
-.profile-bar h1 { margin: 0; font-size: 16px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.profile-bar p { margin: 2px 0 0; font-size: 13px; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chip { flex: none; padding: 3px 10px; border-radius: 999px; background: var(--live); color: var(--live-fg); font-size: 12px; font-weight: 700; }
-.has-profile-bar .card-top { top: calc(128px + env(safe-area-inset-top)); }
-.has-profile-bar .pill { top: calc(132px + env(safe-area-inset-top)); }
+.profile-head h1 { margin: 0; font-size: 24px; line-height: 1.2; overflow-wrap: anywhere; }
+.profile-head p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.chip { display: inline-block; margin-top: 8px; padding: 3px 10px; border-radius: 999px;
+  background: var(--live); color: var(--live-fg); font-size: 12px; font-weight: 700; }
 .who-line a { text-decoration: none; }
 .who-line a:hover { text-decoration: underline; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 8px; }

@@ -8,22 +8,24 @@
   <link rel="stylesheet" href="/app.css">
   <script src="/welcome.js" defer></script>
 </head>
-<body class="feed-page has-profile-bar">
+<body class="feed-page">
   <header class="float-header">
     <a class="logo" href="/">live<span>5</span></a>
     <nav><a class="btn" href="/go">Go live</a></nav>
   </header>
-  <!-- Compact profile bar over the feed: the person's lives start right away. -->
-  <div class="profile-bar" id="bar">
-    <span class="avatar md" id="avatar" aria-hidden="true"></span>
-    <div class="profile-text">
-      <h1 id="name">&nbsp;</h1>
-      <p id="meta"></p>
-    </div>
-    <span class="chip" id="you" hidden>You</span>
-  </div>
   <button class="pill" id="new" type="button" hidden></button>
-  <main class="feed" id="feed"></main>
+  <main class="feed" id="feed">
+    <!-- Profile heading at the top of the page; it scrolls away with the feed, and this
+         person's lives follow straight after it. -->
+    <section class="profile-head">
+      <span class="avatar lg" id="avatar" aria-hidden="true"></span>
+      <div class="profile-text">
+        <h1 id="name">&nbsp;</h1>
+        <p id="meta"></p>
+        <span class="chip" id="you" hidden>You</span>
+      </div>
+    </section>
+  </main>
   <script type="module">
     import { createFeed, avatarNode } from '/feed.js';
     const $ = (x) => document.getElementById(x);
@@ -41,7 +43,7 @@
       const liveNow = u.broadcasts.some((b) => b.status === 'live');
       document.title = `${u.name} · live5`;
       $('name').textContent = u.name;
-      const avatar = avatarNode(u.avatar, u.name, `avatar md${liveNow ? ' is-live' : ''}`);
+      const avatar = avatarNode(u.avatar, u.name, `avatar lg${liveNow ? ' is-live' : ''}`);
       avatar.id = 'avatar';
       $('avatar').replaceWith(avatar);
       $('meta').textContent = liveNow
