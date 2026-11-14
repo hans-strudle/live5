@@ -69,7 +69,7 @@ Broadcasts and profiles survive restarts. A broadcast that was live when the ser
 
 ## Deploying
 
-For a test server on a small EC2 instance (systemd service plus Caddy for real HTTPS), see [deploy/EC2.md](deploy/EC2.md).
+For a test server on a small EC2 instance running Amazon Linux 2023 or Ubuntu (systemd service plus Caddy for real HTTPS), see [deploy/EC2.md](deploy/EC2.md).
 
 ## Status
 
