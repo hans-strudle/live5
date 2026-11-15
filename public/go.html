@@ -26,6 +26,7 @@
     <a class="logo" href="/" aria-label="Back to live5">live5</a>
     <div class="badge" id="badge">OFF AIR</div>
     <div class="timer" id="timer" hidden></div>
+    <button class="flip-btn" id="flip" type="button" hidden aria-label="Switch camera" title="Switch camera"></button>
   </div>
   <div class="bar" id="bar"></div>
   <div class="studio-bottom">
@@ -54,12 +55,16 @@
 <script type="module">
   import { getUser, clearUser, authHeaders as headersFor, ensureUser, askName, renameUser } from '/me.js';
   import { shareStream, shareIcon } from '/share.js';
+  import { icon } from '/icons.js';
   const $ = (id) => document.getElementById(id);
   const cam = $('cam'), go = $('go'), stop = $('stop'), retry = $('retry'), msg = $('msg');
   const TIME_UP = 'Time is up.', STOPPED = 'You ended the broadcast.';
   let media, recorder, stream, mime, seq = 0, queue = Promise.resolve(), tick, ending = false;
   let lost = false; // a piece of video could not be delivered, so no later piece can be either
   let wakeLock = null;
+  const FACING_KEY = 'live5:camera';
+  let facing = (() => { try { return localStorage.getItem(FACING_KEY) === 'environment' ? 'environment' : 'user'; } catch { return 'user'; } })();
+  let switching = false; // in the middle of changing cameras
   let startedAt = 0, endDone = Promise.resolve(); // when the live started; resolves once the server has ended it
 
   // MP4 (H.264/AAC) first: it plays on iOS and Android alike. WebM is the fallback.
@@ -99,9 +104,15 @@
     }
     if (!window.MediaRecorder) { msg.textContent = 'This browser cannot record video. Update it and try again.'; return; }
 
+    // Phones can't have two cameras open at once, and some won't open the other one until the
+    // first is fully stopped. So whatever was open is closed before asking again.
+    closeCamera();
+
     // Try progressively simpler requests: some phones reject specific sizes or lack a mic.
+    const size = { width: { ideal: 720 }, height: { ideal: 1280 } };
     const attempts = [
-      { video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } }, audio: true },
+      { video: { facingMode: { exact: facing }, ...size }, audio: true }, // this camera, nothing else
+      { video: { facingMode: facing, ...size }, audio: true },
       { video: true, audio: true },
       { video: true, audio: false },
     ];
@@ -114,12 +125,65 @@
 
     mime = pickMime(media.getAudioTracks().length > 0);
     if (!mime) { msg.textContent = 'This browser cannot record video in a supported format.'; return; }
+    // Go by the camera that actually opened, which may not be the one asked for.
+    const got = facingOf(media);
+    if (got) facing = got;
+    // Only the front camera is shown mirrored.
+    $('studio').classList.toggle('rear', facing === 'environment');
     cam.srcObject = media;
     cam.play().catch(() => {});
     go.disabled = !canGoLive();
     msg.textContent = ''; // camera ready: nothing to say
+    offerFlip();
   }
   retry.onclick = openCamera;
+
+  function closeCamera() {
+    if (media) media.getTracks().forEach((t) => t.stop());
+    media = null;
+    cam.srcObject = null;
+  }
+
+  // 'user' (front) or 'environment' (back), as the camera itself reports it. Webcams report neither.
+  function facingOf(m) {
+    const f = m.getVideoTracks()[0]?.getSettings?.().facingMode;
+    return f === 'user' || f === 'environment' ? f : null;
+  }
+
+  // Switching cameras: front or back, chosen before going live and remembered on this device.
+  // Not while live: the recorder is tied to the camera it started with, and swapping it mid-way
+  // ends the recording.
+  const flip = $('flip');
+  flip.append(icon('flip', 22));
+  // The button is only offered on a device with a front and a back camera.
+  async function offerFlip() {
+    flip.hidden = true;
+    if (recorder || !media || !facingOf(media)) return;
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    flip.hidden = !!recorder || !media || devices.filter((d) => d.kind === 'videoinput').length < 2;
+  }
+  flip.onclick = async () => {
+    if (switching || recorder) return;
+    switching = true;
+    flip.disabled = true;
+    go.disabled = true;
+    const before = facing;
+    try {
+      facing = before === 'user' ? 'environment' : 'user';
+      await openCamera();
+      if (!media) { // the other camera wouldn't open: go back to the one that worked
+        facing = before;
+        await openCamera();
+        if (media) msg.textContent = 'Couldn’t switch cameras.';
+      } else if (facing === before) {
+        msg.textContent = 'Couldn’t switch cameras.';
+      }
+      try { localStorage.setItem(FACING_KEY, facing); } catch {}
+    } finally {
+      switching = false;
+      flip.disabled = false;
+    }
+  };
 
   // Who is going live. No login: the server gives this device a user (public UUID + private
   // key) the first time a name is entered; the key stays in this browser (see me.js). Broadcasts
@@ -361,7 +425,7 @@
   }
 
   go.onclick = async () => {
-    if (!canGoLive()) return;
+    if (!canGoLive() || switching || !media) return;
     go.disabled = true;
     // First time: ask for a name in a popup over the camera, then go live straight away.
     if (!user) {
@@ -373,6 +437,7 @@
       if (!user) { go.disabled = false; return; } // cancelled
       renderAs();
     }
+    flip.hidden = true; // the camera is fixed from here on
     try {
       // A key frame every second: Chrome cuts MP4 pieces at key frames, so without this Android
       // sends ~6-second pieces and live viewers wait that long. Browsers that don't know the

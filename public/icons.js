@@ -10,6 +10,7 @@ const SHAPES = {
   bell: BELL,
   bellOff: `${BELL}<path d="M4 4l16 16"/>`,
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  flip: '<path d="M20 4.5v4h-4M4 12a8 8 0 0 1 13.7-5.6L20 8.5"/><path d="M4 19.5v-4h4M20 12a8 8 0 0 1-13.7 5.6L4 15.5"/>',
 };
 
 export function icon(name, size = 24) {

@@ -38,6 +38,7 @@
 - A live that recorded no bytes is marked `empty` whatever its format. After a crash, a broadcast left as `live` on disk is closed at startup using the recording's real size and time.
 - `mp4.mjs` reads files made by whoever was broadcasting: never loop on a count taken from the file without a bound.
 - Icons are inline SVG from `public/icons.js`, not emoji. Red (`--live`) is only for live state and the Go live buttons.
+- Camera flip (front/back) on `/go` is only available before going live: the recorder is tied to the camera it started with. Switching always stops the open camera before opening the other (phones can't hold two), and falls back to the previous camera if the other won't open.
 - Do not deploy, publish, commit or push without the owner's authorization.
 
 ## Open questions

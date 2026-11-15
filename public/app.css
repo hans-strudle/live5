@@ -209,8 +209,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .studio { position: fixed; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); z-index: 5;
   width: min(100vw, calc(100dvh * 9 / 16)); background: #000; overflow: hidden; }
 @media (max-width: 600px) { .studio { width: 100vw; } }
-/* Mirrored, as front-camera previews are; the broadcast itself is not mirrored. */
+/* The front camera is shown mirrored, as front-camera previews are; the back camera is not.
+   The broadcast itself is never mirrored. */
 .studio video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.studio.rear video, .studio.rear .endframe { transform: none; }
 .studio-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px;
   padding: calc(12px + env(safe-area-inset-top)) 14px 28px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
 .studio-top .logo { margin-right: auto; text-shadow: var(--over-video); }
@@ -241,8 +243,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .studio.is-live .studio-top { background: linear-gradient(rgba(0,0,0,.35), transparent); }
 .studio.is-live .controls { width: auto; }
 .studio.is-live .go-btn.end { width: auto; padding: 10px 26px; font-size: 15px; }
-.live-share { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; display: grid; place-items: center;
+.live-share, .flip-btn { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; display: grid; place-items: center;
   background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
+.flip-btn { width: 40px; height: 40px; }
+.flip-btn[disabled] { opacity: .5; }
 
 /* After a live: the last frame stays (mirrored like the preview), dimmed behind the end panel;
    then the replay, which is not mirrored. */
