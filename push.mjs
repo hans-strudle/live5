@@ -83,8 +83,8 @@ export function encryptPayload(payload, p256dh, auth) {
 // Send one notification. Returns the push service's HTTP status (201 = accepted; 404/410 = the
 // subscription is gone and should be forgotten), or 0 on a network error.
 export async function sendPush(subscription, data, vapid, subject, ttlSeconds = 120) {
-  const body = encryptPayload(JSON.stringify(data), subscription.keys.p256dh, subscription.keys.auth);
   try {
+    const body = encryptPayload(JSON.stringify(data), subscription.keys.p256dh, subscription.keys.auth);
     const res = await fetch(subscription.endpoint, {
       method: 'POST',
       redirect: 'error',

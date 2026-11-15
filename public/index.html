@@ -15,11 +15,11 @@
 </head>
 <body class="feed-page">
   <header class="float-header">
-    <a class="logo" href="/">live<span>5</span></a>
+    <a class="logo" href="/">live5</a>
     <nav>
       <button class="bell" id="bell" type="button" hidden></button>
       <a class="ghost-link" id="me" hidden>You</a>
-      <a class="btn" href="/go">Go live</a>
+      <a class="btn live" href="/go">Go live</a>
     </nav>
   </header>
   <main class="feed" id="feed" aria-label="Broadcasts"></main>
@@ -35,8 +35,8 @@
     const shared = /^\/watch\/([^/]+)$/.exec(location.pathname);
     createFeed(document.getElementById('feed'), {
       first: shared ? decodeURIComponent(shared[1]) : null,
-      emptyTitle: 'Nobody has gone live yet',
-      emptyText: 'Be the first. Lives last 30 seconds and can’t be edited.',
+      emptyTitle: 'Nothing here yet',
+      emptyText: 'Nobody has gone live so far. You could be first.',
     });
   </script>
 </body>

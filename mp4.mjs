@@ -56,6 +56,9 @@ const MDHD = [4 + 4 + 4 + 4, 4 + 8 + 8 + 4];
 
 const timescaleOf = (buf, b) => (buf[b.body] ? buf.readUInt32BE(b.body + 20) : buf.readUInt32BE(b.body + 12));
 
+// Far more than a capped live can hold (30 fps video plus audio is under 100 samples a second).
+const MAX_SAMPLES = 500_000;
+
 export function isFragmentedMp4(buf) {
   const top = boxes(buf);
   const moov = top.find((b) => b.type === 'moov');
@@ -83,6 +86,9 @@ export function defragmentMp4(buf) {
   }
 
   // Walk every fragment and collect each sample's size, timing, flags and file position.
+  // The file comes from whoever was broadcasting, so the counts in it aren't trusted: a run
+  // claiming billions of samples would otherwise keep the server busy until it ran out of memory.
+  let budget = MAX_SAMPLES;
   for (const moof of top.filter((b) => b.type === 'moof')) {
     for (const traf of children(buf, moof).filter((b) => b.type === 'traf')) {
       const tfhd = child(buf, traf, 'tfhd');
@@ -110,12 +116,13 @@ export function defragmentMp4(buf) {
         let firstFlags = null;
         if (f & 0x4) { firstFlags = buf.readUInt32BE(r); r += 4; }
         for (let i = 0; i < count; i++) {
+          if (--budget < 0) return null;
           const duration = f & 0x100 ? buf.readUInt32BE((r += 4) - 4) : dDur;
           const size = f & 0x200 ? buf.readUInt32BE((r += 4) - 4) : dSize;
           let flags = f & 0x400 ? buf.readUInt32BE((r += 4) - 4) : dFlags;
           if (i === 0 && firstFlags != null) flags = firstFlags;
           const cto = f & 0x800 ? (version ? buf.readInt32BE((r += 4) - 4) : buf.readUInt32BE((r += 4) - 4)) : 0;
-          if (pos + size <= buf.length) t.samples.push({ duration, size, flags, cto, pos });
+          if (pos >= 0 && pos + size <= buf.length) t.samples.push({ duration, size, flags, cto, pos });
           pos += size;
         }
         dataEnd = pos;

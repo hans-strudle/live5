@@ -1,42 +1,51 @@
+/* live5 looks like the thing it is: a camera that is on air for a few seconds. Near-black, warm
+   white, one red that only ever means "live", and small monospace labels like a viewfinder's. */
 :root {
-  --bg: #0d0d10; --fg: #f3f3f5; --muted: #9a9aa6; --card: #18181d; --line: #2a2a31;
-  --live: #ff2d55; --live-fg: #fff;
+  --bg: #0b0b0a; --fg: #f3f0e9; --muted: #96928a; --panel: #171614; --line: #2c2a27;
+  --live: #e8371f; --ink: #111110;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --over-video: 0 1px 2px rgba(0,0,0,.65); /* shadow for text and icons sitting on video */
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 system-ui, sans-serif; }
-main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
 a { color: inherit; }
-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-.logo { font-weight: 800; font-size: 22px; letter-spacing: -0.02em; text-decoration: none; }
-.logo span { color: var(--live); }
-.btn { display: inline-block; border: 0; border-radius: 999px; padding: 12px 22px; font: inherit; font-weight: 700;
-  background: var(--live); color: var(--live-fg); cursor: pointer; text-decoration: none; }
-.btn[disabled] { opacity: .5; cursor: default; }
-.btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--fg); }
+button { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .muted { color: var(--muted); }
-.stage { position: relative; background: #000; border-radius: 16px; overflow: hidden; aspect-ratio: 9 / 16; max-height: 70vh; margin: 0 auto 16px; }
-.stage video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.badge { position: absolute; top: 12px; left: 12px; padding: 4px 10px; border-radius: 6px; font-weight: 800; font-size: 13px;
-  background: rgba(0,0,0,.6); }
-.badge.on { background: var(--live); }
-.timer { position: absolute; top: 12px; right: 12px; padding: 4px 10px; border-radius: 6px; background: rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }
-.bar { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--live); width: 0; transition: width .25s linear; }
-.controls { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
-.list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.list .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 16px;
-  background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-.list a { text-decoration: none; }
-.list a:hover { text-decoration: underline; }
+
+/* Wordmark: a red tally light, then the name. */
+.logo { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 18px;
+  font-weight: 700; letter-spacing: -.02em; text-decoration: none; }
+.logo::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--live); }
+
+/* Buttons are warm white by default. Red is kept for going live. */
+.btn { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px;
+  padding: 11px 18px; font: inherit; font-weight: 600; line-height: 1.2; background: var(--fg); color: var(--ink);
+  cursor: pointer; text-decoration: none; }
+.btn[disabled] { opacity: .5; cursor: default; }
+.btn.live { background: var(--live); color: #fff; }
+.btn.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); }
+.btn.ghost-light { background: rgba(255,255,255,.16); color: #fff; }
+
+.badge { position: absolute; top: 12px; left: 12px; padding: 3px 7px; border-radius: 3px;
+  font: 700 11px/1.4 var(--mono); letter-spacing: .1em; background: rgba(0,0,0,.6); color: rgba(255,255,255,.85); }
+.badge.on { background: var(--live); color: #fff; }
+.timer { position: absolute; top: 12px; right: 12px; padding: 3px 7px; border-radius: 3px; background: rgba(0,0,0,.6);
+  font: 700 12px/1.4 var(--mono); font-variant-numeric: tabular-nums; }
+.bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--live); width: 0; transition: width .25s linear; }
+.controls { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; width: 100%; }
+
 /* Profile pictures: a frame from the person's latest live (img), or their initial (span). */
-.avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--live); color: var(--live-fg); font-size: 18px; font-weight: 800; object-fit: cover; }
-img.avatar { background: #222; }
+.avatar { flex: none; width: 40px; height: 40px; border-radius: 28%; display: grid; place-items: center;
+  background: var(--line); color: var(--fg); font-size: 17px; font-weight: 600; object-fit: cover; }
 .avatar.xs { width: 32px; height: 32px; font-size: 14px; }
-.avatar.sm { width: 36px; height: 36px; font-size: 16px; border: 2px solid rgba(255,255,255,.85); }
-.avatar.md { width: 44px; height: 44px; font-size: 20px; }
-.avatar.is-live { box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--live); }
+.avatar.sm { width: 36px; height: 36px; font-size: 15px; box-shadow: 0 0 0 1px rgba(255,255,255,.35); }
+.avatar.md { width: 44px; height: 44px; font-size: 19px; }
+.avatar.lg { width: 84px; height: 84px; font-size: 34px; }
+.avatar.is-live { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--live); }
 
 /* ---------- feed: one broadcast per screen, snap scrolling ---------- */
 .feed-page { height: 100dvh; overflow: hidden; }
@@ -46,243 +55,213 @@ img.avatar { background: #222; }
 .card { position: relative; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden;
   background: #000; width: 100%; max-width: calc(100dvh * 9 / 16); margin: 0 auto; }
 @media (max-width: 600px) { .card { max-width: none; } }
-.card video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; cursor: pointer; }
-.card-top { position: absolute; top: calc(68px + env(safe-area-inset-top)); left: 12px; pointer-events: none; }
+.card video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; cursor: pointer;
+  touch-action: manipulation; /* no double-tap zoom on phones: a double tap is a like */ }
+.card-top { position: absolute; top: calc(64px + env(safe-area-inset-top)); left: 16px; pointer-events: none; }
 .card-top .badge { position: static; display: inline-block; }
 .card-info { position: absolute; left: 0; right: 0; bottom: 0; padding: 64px 72px calc(28px + env(safe-area-inset-bottom)) 16px;
-  background: linear-gradient(transparent, rgba(0,0,0,.7)); pointer-events: none; }
+  background: linear-gradient(transparent, rgba(0,0,0,.6)); pointer-events: none; }
 .card-who { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; max-width: 100%; }
-.card-name { font-weight: 800; font-size: 18px; overflow-wrap: anywhere; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.card-name { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; text-shadow: var(--over-video); }
 .card-who:hover .card-name { text-decoration: underline; }
-.card-meta { margin-left: 46px; }
-.card-meta { color: rgba(255,255,255,.8); font-size: 14px; margin-top: 2px; }
-.sound { position: absolute; right: 12px; bottom: calc(28px + env(safe-area-inset-bottom)); width: 44px; height: 44px;
-  border-radius: 50%; border: 0; background: rgba(0,0,0,.5); color: #fff; font-size: 20px; cursor: pointer; }
-/* Comment button on feed cards, stacked above the sound button. */
-.talk { position: absolute; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); width: 44px;
-  display: grid; justify-items: center; gap: 2px; border: 0; background: none; color: #fff; cursor: pointer; padding: 0; }
-.talk-icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
-  background: rgba(0,0,0,.5); font-size: 20px; }
-.talk-count { font-size: 12px; font-weight: 700; min-height: 1em; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
-.card-info { padding-right: 72px; }
+.card-meta { margin: 2px 0 0 46px; font: 12px/1.4 var(--mono); color: rgba(255,255,255,.8); text-shadow: var(--over-video); }
 
-/* Share button on feed cards, above the comment button. */
-.share-btn { position: absolute; right: 12px; bottom: calc(150px + env(safe-area-inset-bottom)); width: 44px; height: 44px;
-  border-radius: 50%; border: 0; display: grid; place-items: center; background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
-
-/* Like on feed cards, top of the right-hand stack. Fills red when liked; no counts. */
-.like-btn { position: absolute; right: 12px; bottom: calc(206px + env(safe-area-inset-bottom)); width: 44px; height: 44px;
-  border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
-.like-btn svg { fill: none; transition: fill .15s; }
+/* The right-hand column on a card, bottom to top: sound, comments, share, like. Bare icons. */
+.sound, .talk, .share-btn, .like-btn { position: absolute; right: 10px; width: 44px; padding: 0; border: 0; background: none;
+  color: #fff; cursor: pointer; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+.sound, .share-btn, .like-btn { height: 44px; display: grid; place-items: center; }
+.sound { bottom: calc(28px + env(safe-area-inset-bottom)); }
+.talk { bottom: calc(84px + env(safe-area-inset-bottom)); display: grid; justify-items: center; gap: 0; }
+.talk-icon { width: 44px; height: 44px; display: grid; place-items: center; }
+.talk-count { font: 700 11px/1 var(--mono); min-height: 11px; }
+.share-btn { bottom: calc(150px + env(safe-area-inset-bottom)); }
+/* Like fills red when liked. There are no counts. */
+.like-btn { bottom: calc(206px + env(safe-area-inset-bottom)); }
+.like-btn svg { transition: fill .15s; }
 .like-btn.on { color: var(--live); }
 .like-btn.on svg { fill: var(--live); }
-.like-btn.pop svg { animation: like-pop .35s ease-out; }
-@keyframes like-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.like-btn.pop svg { animation: like-pop .3s ease-out; }
+@keyframes like-pop { 40% { transform: scale(1.3); } }
 
-/* Double-tap like: a big heart where the finger was. */
-.card video { touch-action: manipulation; } /* no double-tap zoom on phones */
-.like-burst { position: absolute; z-index: 3; width: 110px; height: 110px; margin: -55px 0 0 -55px; pointer-events: none;
-  color: var(--live); filter: drop-shadow(0 4px 16px rgba(0,0,0,.45)); animation: like-burst .8s ease-out forwards; }
+/* Double-tap like: a heart where the finger was. */
+.like-burst { position: absolute; z-index: 3; width: 96px; height: 96px; margin: -48px 0 0 -48px; pointer-events: none;
+  color: var(--live); filter: drop-shadow(0 2px 8px rgba(0,0,0,.4)); animation: like-burst .7s ease-out forwards; }
 .like-burst svg { width: 100%; height: 100%; fill: var(--live); }
 @keyframes like-burst {
-  0% { opacity: 0; transform: scale(.4) rotate(-12deg); }
-  20% { opacity: 1; transform: scale(1.1) rotate(-6deg); }
-  35% { transform: scale(.95) rotate(-6deg); }
-  70% { opacity: 1; transform: scale(1) translateY(-10px) rotate(-6deg); }
-  100% { opacity: 0; transform: scale(1.05) translateY(-60px) rotate(-6deg); }
+  0% { opacity: 0; transform: scale(.5); }
+  20% { opacity: 1; transform: scale(1.08); }
+  35% { transform: scale(1); }
+  70% { opacity: 1; transform: translateY(-8px); }
+  100% { opacity: 0; transform: translateY(-40px); }
 }
 
-/* Share on the Go live page while live. */
-.studio .share { display: grid; justify-items: center; gap: 6px; }
-.share-live { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; background: rgba(255,255,255,.15);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.card-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255,255,255,.18); }
+.card-progress i { display: block; height: 100%; width: 0; background: var(--fg); }
+.card-note { position: absolute; left: 16px; right: 16px; top: 45%; text-align: center; padding: 12px; font-size: 14px;
+  border-radius: 8px; background: rgba(0,0,0,.7); }
+.card-empty { display: grid; place-content: center; justify-items: center; gap: 10px; padding: 24px;
+  text-align: center; background: var(--bg); }
+.card-empty h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.card-empty p { margin: 0 0 10px; max-width: 30ch; }
 
-/* "Sam just went live · Watch" banner over the feed. */
-.live-banner { position: fixed; z-index: 12; top: calc(64px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
-  width: min(calc(100vw - 24px), 420px); display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px;
-  border-radius: 999px; background: rgba(24,24,29,.92); border: 1px solid var(--line);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 8px 30px rgba(0,0,0,.5);
-  animation: banner-in .25s ease-out; }
-.live-banner[hidden] { display: none; }
-.live-banner .avatar { box-shadow: 0 0 0 2px var(--live); }
-.live-banner-text { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.live-banner .btn { padding: 8px 16px; font-size: 14px; }
-.live-banner-close { border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; padding: 6px; cursor: pointer; }
-@keyframes banner-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
-
-/* Shown when the browser blocked sound until the next tap. */
-.sound-hint { position: fixed; z-index: 11; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
-  padding: 8px 16px; border-radius: 999px; background: rgba(0,0,0,.65); color: #fff; font-weight: 700; font-size: 14px;
-  pointer-events: none; }
-.sound-hint[hidden] { display: none; }
+.float-header { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center;
+  justify-content: space-between; padding: calc(12px + env(safe-area-inset-top)) 16px 28px;
+  background: linear-gradient(rgba(0,0,0,.55), transparent); pointer-events: none; }
+.float-header a { pointer-events: auto; }
+.float-header .logo { text-shadow: var(--over-video); }
+.float-header nav { display: flex; gap: 14px; align-items: center; }
+.float-header .btn { padding: 8px 14px; font-size: 15px; }
+.ghost-link { font-weight: 600; font-size: 15px; text-decoration: none; text-shadow: var(--over-video); }
 
 /* Live alerts bell in the header. */
-.bell { pointer-events: auto; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
-  background: rgba(0,0,0,.35); font: inherit; font-size: 18px; cursor: pointer; }
-.bell.on { background: rgba(255,45,85,.25); }
-.bell[hidden] { display: none; }
+.bell { pointer-events: auto; width: 36px; height: 36px; padding: 0; border: 0; display: grid; place-items: center;
+  background: none; color: rgba(255,255,255,.75); cursor: pointer; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+.bell.on { color: #fff; }
+
+/* "Sam is live · Watch" over the feed. */
+.live-banner { position: fixed; z-index: 12; top: calc(60px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  width: min(calc(100vw - 24px), 400px); display: flex; align-items: center; gap: 10px; padding: 8px 6px 8px 10px;
+  border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  animation: banner-in .2s ease-out; }
+.live-banner .avatar { box-shadow: 0 0 0 2px var(--live); }
+.live-banner-text { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-banner .btn { padding: 7px 14px; font-size: 14px; }
+.live-banner-close { display: grid; place-items: center; border: 0; background: none; color: var(--muted); padding: 6px; cursor: pointer; }
+@keyframes banner-in { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Shown when the browser held the sound back until the next tap. */
+.sound-hint { position: fixed; z-index: 11; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  padding: 6px 10px; border-radius: 4px; background: rgba(0,0,0,.7); color: #fff; font: 12px/1.4 var(--mono);
+  letter-spacing: .04em; text-transform: uppercase; pointer-events: none; }
 
 /* Small confirmation, e.g. "Link copied". */
-.toast { position: fixed; left: 50%; bottom: calc(32px + env(safe-area-inset-bottom)); transform: translate(-50%, 12px);
-  z-index: 50; padding: 10px 18px; border-radius: 999px; background: #fff; color: #000; font-weight: 700; font-size: 14px;
-  opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+.toast { position: fixed; left: 50%; bottom: calc(32px + env(safe-area-inset-bottom)); transform: translate(-50%, 8px);
+  z-index: 50; padding: 9px 14px; border-radius: 8px; background: var(--fg); color: var(--ink); font-weight: 600; font-size: 14px;
+  opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-/* Comment sheet: slides up from the bottom over the video. */
+/* ---------- comment sheet: comes up from the bottom over the video ---------- */
 .sheet { margin: auto auto 0; width: min(100vw, 520px); max-width: 100vw; max-height: 72dvh; padding: 0;
-  border: 1px solid var(--line); border-bottom: 0; border-radius: 18px 18px 0 0; background: var(--card); color: var(--fg);
+  border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--panel); color: var(--fg);
   display: flex; flex-direction: column; }
 .sheet:not([open]) { display: none; }
 .sheet::backdrop { background: rgba(0,0,0,.45); }
-.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px;
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 10px 10px 16px;
   border-bottom: 1px solid var(--line); }
-.sheet-head h2 { margin: 0; font-size: 16px; }
-.sheet-close { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 4px 8px; }
+.sheet-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.sheet-close { display: grid; place-items: center; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 6px; }
 .comments { list-style: none; margin: 0; padding: 8px 16px; overflow-y: auto; flex: 1; min-height: 120px; }
 .comment { display: flex; gap: 10px; padding: 8px 0; }
 .comment-avatar { flex: none; text-decoration: none; }
 .comment-body { min-width: 0; }
 .comment-line { display: flex; gap: 8px; align-items: baseline; }
-.comment-author { font-weight: 700; font-size: 14px; text-decoration: none; overflow-wrap: anywhere; }
-.comment-time { color: var(--muted); font-size: 12px; }
-.comment-text-body { margin: 2px 0 0; overflow-wrap: anywhere; }
-.comments-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--muted); }
+.comment-author { font-weight: 600; font-size: 14px; text-decoration: none; overflow-wrap: anywhere; }
+.comment-time { color: var(--muted); font: 11px/1.4 var(--mono); }
+.comment-text-body { margin: 1px 0 0; overflow-wrap: anywhere; }
+.comments-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--muted); font-size: 14px; }
 .comment-form { display: grid; gap: 8px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 .comment-row { display: flex; gap: 8px; }
-.comment-form input { font: inherit; min-width: 0; flex: 1; padding: 10px 14px; border-radius: 999px;
+.comment-form input { font: inherit; min-width: 0; flex: 1; padding: 10px 12px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
-.comment-form input:focus { outline: 2px solid var(--live); outline-offset: 1px; }
-.comment-form .btn { padding: 10px 18px; }
-.comment-note { margin: 0; font-size: 13px; color: var(--live); min-height: 0; }
+.comment-form input:focus { outline: 2px solid var(--fg); outline-offset: 0; }
+.comment-form .btn { padding: 10px 16px; }
+.comment-note { margin: 0; font-size: 13px; color: var(--live); }
 .comment-note:empty { display: none; }
 
-.card-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.2); }
-.card-progress i { display: block; height: 100%; width: 0; background: var(--live); }
-.card-note { position: absolute; left: 16px; right: 16px; top: 45%; text-align: center; padding: 12px;
-  border-radius: 12px; background: rgba(0,0,0,.65); }
-.card-empty { display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px;
-  text-align: center; background: var(--bg); }
-.card-empty h2 { margin: 0; }
-.card-empty p { margin: 0 0 8px; max-width: 32ch; }
-
-.float-header { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center;
-  justify-content: space-between; padding: calc(12px + env(safe-area-inset-top)) 16px 28px;
-  background: linear-gradient(rgba(0,0,0,.6), transparent); pointer-events: none; }
-.float-header a { pointer-events: auto; }
-.float-header nav { display: flex; gap: 16px; align-items: center; }
-.float-header .btn { padding: 8px 18px; }
-.ghost-link { font-weight: 700; text-decoration: none; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
-.pill { position: fixed; top: calc(72px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 11;
-  border: 0; border-radius: 999px; padding: 8px 16px; background: var(--live); color: var(--live-fg); font: inherit;
-  font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
-
-/* Profile heading: first thing on a profile page, scrolls away with the feed. */
+/* ---------- profile heading: first thing on a profile page, scrolls away with the feed ---------- */
 .profile-head { scroll-snap-align: start; display: flex; align-items: center; gap: 16px;
   width: 100%; max-width: calc(100dvh * 9 / 16); margin: 0 auto;
   padding: calc(72px + env(safe-area-inset-top)) 16px 20px; }
 @media (max-width: 600px) { .profile-head { max-width: none; } }
-.avatar.lg { width: 88px; height: 88px; font-size: 36px; }
 .profile-text { min-width: 0; flex: 1; }
-.profile-head h1 { margin: 0; font-size: 24px; line-height: 1.2; overflow-wrap: anywhere; }
-.profile-head p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
-.chip { display: inline-block; margin-top: 8px; padding: 3px 10px; border-radius: 999px;
-  background: var(--live); color: var(--live-fg); font-size: 12px; font-weight: 700; }
-.who-line a { text-decoration: none; }
-.who-line a:hover { text-decoration: underline; }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); margin-right: 8px; }
-.share { word-break: break-all; }
-.welcome { width: min(92vw, 380px); border: 1px solid var(--line); border-radius: 20px; padding: 28px 24px 24px;
-  background: var(--card); color: var(--fg); text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
-.welcome::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(4px); }
-.welcome h2 { margin: 0 0 8px; font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
-.welcome h2 span { color: var(--live); }
-.welcome-lead { font-size: 18px; margin: 0 0 16px; }
-.welcome ul { list-style: none; padding: 0; margin: 0 0 24px; display: grid; gap: 10px; text-align: left; }
-.welcome li { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); }
-.welcome .btn { width: 100%; }
-.quota { text-align: center; margin: 12px 0 0; font-size: 14px; color: var(--muted); }
-.quota.out { color: var(--fg); font-weight: 700; }
-.who { display: grid; gap: 12px; max-width: 360px; margin: 12vh auto 0; text-align: center; }
-.who label { font-size: 24px; font-weight: 800; }
-.who input { font: inherit; font-size: 18px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line);
-  background: var(--card); color: var(--fg); text-align: center; }
-.who input:focus { outline: 2px solid var(--live); outline-offset: 1px; }
-.as { text-align: center; margin: 0 0 12px; }
-.as a { color: var(--muted); }
+.profile-head h1 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.profile-head p { margin: 4px 0 0; font: 12px/1.4 var(--mono); color: var(--muted); }
+.chip { display: inline-block; margin-top: 8px; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--line);
+  color: var(--muted); font: 700 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
-/* ---------- Go live studio: full-screen camera, status on top, controls at the bottom ---------- */
-.studio { position: fixed; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); z-index: 5;
-  width: min(100vw, calc(100dvh * 9 / 16)); background: #000; overflow: hidden; }
-@media (max-width: 600px) { .studio { width: 100vw; } }
-/* Mirrored like a mirror, as front-camera previews usually are; the broadcast itself is not mirrored. */
-.studio video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-.studio-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px;
-  padding: calc(12px + env(safe-area-inset-top)) 14px 28px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
-.studio-top .logo { margin-right: auto; }
-.studio-top .badge, .studio-top .timer { position: static; }
-.studio .bar { top: 0; bottom: auto; z-index: 1; }
-.studio-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: grid; gap: 10px; justify-items: center;
-  text-align: center; padding: 48px 16px calc(20px + env(safe-area-inset-bottom));
-  background: linear-gradient(transparent, rgba(0,0,0,.75)); }
-.studio-bottom p { margin: 0; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
-.studio .as { font-size: 14px; color: rgba(255,255,255,.9); }
-.studio .as a { color: rgba(255,255,255,.7); }
-.studio .quota { margin: 0; color: rgba(255,255,255,.75); }
-.studio .quota.out { color: #fff; }
-.studio-msg { font-size: 14px; color: rgba(255,255,255,.8); max-width: 36ch; }
-.studio-msg:empty { display: none; }
-.studio-msg a, .studio .share a { color: #fff; }
-.studio .share { font-size: 13px; word-break: break-all; }
-/* Name popup (me.js askName): over the camera, the comment sheet, or any page. */
-.name-dialog { width: min(92vw, 360px); border: 1px solid var(--line); border-radius: 20px; padding: 24px 20px 20px;
-  background: var(--card); color: var(--fg); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
-.name-dialog::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(3px); }
-.name-dialog form { display: grid; gap: 12px; text-align: center; }
-.name-dialog h2 { margin: 0; font-size: 20px; }
-.name-dialog input { font: inherit; font-size: 18px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
-  background: var(--bg); color: var(--fg); text-align: center; }
-.name-dialog input:focus { outline: 2px solid var(--live); outline-offset: 1px; }
+/* ---------- popups: the welcome rules, the iPhone alerts how-to, the name prompt ---------- */
+.welcome, .name-dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--fg);
+  box-shadow: 0 16px 48px rgba(0,0,0,.55); }
+.welcome::backdrop, .name-dialog::backdrop { background: rgba(0,0,0,.7); }
+.welcome { width: min(92vw, 360px); padding: 22px 22px 20px; }
+.welcome h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
+.welcome h2.logo { display: flex; font-size: 20px; font-weight: 700; }
+.welcome-lead { margin: 0 0 14px; color: var(--muted); }
+/* Numbered lines with a rule between them. */
+.welcome ol { list-style: none; padding: 0; margin: 0 0 20px; counter-reset: step; border-bottom: 1px solid var(--line); }
+.welcome li { counter-increment: step; display: grid; grid-template-columns: 22px 1fr; padding: 10px 0;
+  border-top: 1px solid var(--line); font-size: 15px; }
+.welcome li::before { content: counter(step); font: 12px/1.8 var(--mono); color: var(--muted); }
+.welcome .btn { width: 100%; }
+
+.name-dialog { width: min(92vw, 340px); padding: 20px; }
+.name-dialog form { display: grid; gap: 12px; }
+.name-dialog h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.name-dialog input { font: inherit; font-size: 17px; padding: 11px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--fg); }
+.name-dialog input:focus { outline: 2px solid var(--fg); outline-offset: 0; }
 .name-note { margin: 0; font-size: 13px; color: var(--muted); }
 .name-note.error { color: var(--live); }
 .name-actions { display: flex; gap: 10px; }
 .name-actions .btn { flex: 1; }
 
-/* While live: keep the video clear. Only the badge/countdown on top and a slim End + share at
-   the bottom; everything else in the bottom area is hidden and the dark fade is lighter. */
-.studio.is-live .as, .studio.is-live .quota, .studio.is-live .studio-msg, .studio.is-live .share { display: none; }
+/* ---------- Go live: the camera fills the screen, status on top, controls at the bottom ---------- */
+.studio { position: fixed; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); z-index: 5;
+  width: min(100vw, calc(100dvh * 9 / 16)); background: #000; overflow: hidden; }
+@media (max-width: 600px) { .studio { width: 100vw; } }
+/* Mirrored, as front-camera previews are; the broadcast itself is not mirrored. */
+.studio video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.studio-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px;
+  padding: calc(12px + env(safe-area-inset-top)) 14px 28px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
+.studio-top .logo { margin-right: auto; text-shadow: var(--over-video); }
+.studio-top .badge, .studio-top .timer { position: static; }
+.studio .bar { top: 0; bottom: auto; z-index: 1; }
+.studio-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: grid; gap: 10px; justify-items: center;
+  text-align: center; padding: 48px 16px calc(20px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgba(0,0,0,.75)); }
+.studio-bottom p { margin: 0; text-shadow: var(--over-video); }
+.as { font-size: 14px; color: rgba(255,255,255,.9); }
+.as a { color: rgba(255,255,255,.7); }
+.quota { font-size: 13px; color: rgba(255,255,255,.75); }
+.quota.out { color: #fff; }
+.studio-msg { font-size: 14px; color: rgba(255,255,255,.85); max-width: 36ch; }
+.studio-msg:empty { display: none; }
+.studio-msg a { color: #fff; }
+
+.go-btn { width: min(100%, 300px); padding: 15px 20px; font-size: 17px; }
+.go-btn.end { background: var(--fg); color: var(--ink); }
+/* Locked until the next live: a quiet countdown in place of the red button. */
+.go-btn.locked, .go-btn.locked[disabled] { opacity: 1; background: rgba(0,0,0,.55); color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.28); font: 600 14px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+
+/* While live the picture stays clear: badge and countdown on top, a small End and a share
+   button at the bottom, a lighter fade behind them, and nothing else. */
+.studio.is-live .as, .studio.is-live .quota, .studio.is-live .studio-msg { display: none; }
 .studio.is-live .studio-bottom { padding-top: 24px; background: linear-gradient(transparent, rgba(0,0,0,.35)); }
 .studio.is-live .studio-top { background: linear-gradient(rgba(0,0,0,.35), transparent); }
-.studio.is-live .go-btn.end { min-width: 0; padding: 10px 28px; font-size: 16px; background: rgba(255,255,255,.92); }
-.live-share { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
-  background: rgba(0,0,0,.45); color: #fff; cursor: pointer; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.live-share[hidden] { display: none; }
-/* After a live: a dimmer backdrop so the end panel reads clearly over the last frame. */
-.studio.is-ended .studio-bottom { background: linear-gradient(transparent, rgba(0,0,0,.8) 40%); }
+.studio.is-live .controls { width: auto; }
+.studio.is-live .go-btn.end { width: auto; padding: 10px 26px; font-size: 15px; }
+.live-share { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; display: grid; place-items: center;
+  background: rgba(0,0,0,.5); color: #fff; cursor: pointer; }
 
-/* After a live: the frozen last frame (mirrored like the preview), then the replay (not mirrored). */
+/* After a live: the last frame stays (mirrored like the preview), dimmed behind the end panel;
+   then the replay, which is not mirrored. */
+.studio.is-ended .studio-bottom { background: linear-gradient(transparent, rgba(0,0,0,.8) 40%); }
 .endframe { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-.endframe[hidden] { display: none; }
 .studio video.replay { transform: none; }
-.end-panel { width: min(100%, 360px); display: grid; gap: 10px; justify-items: center; padding: 18px 16px 14px;
-  border-radius: 20px; background: rgba(0,0,0,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.end-panel[hidden] { display: none; }
-.end-panel h2 { margin: 0; font-size: 22px; }
-.end-panel p { margin: 0; }
+.end-panel { width: min(100%, 340px); display: grid; gap: 10px; justify-items: center; padding: 18px 16px 14px;
+  border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(11,11,10,.86); }
+.end-panel h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.end-panel p { margin: 0; text-shadow: none; }
 #end-sub { color: rgba(255,255,255,.8); font-size: 14px; }
-.end-panel #end-sub:empty { display: none; }
+#end-sub:empty { display: none; }
 .end-actions { display: flex; gap: 10px; width: 100%; }
 .end-actions .btn { flex: 1; padding: 12px 14px; }
-.end-actions .btn[hidden] { display: none; }
-.btn.ghost-light { background: rgba(255,255,255,.18); color: #fff; }
-.end-links { font-size: 14px; color: rgba(255,255,255,.7); }
-.end-links a { color: #fff; }
+.end-links { font-size: 14px; color: var(--muted); }
+.end-links a { color: var(--fg); }
 
-.go-btn { min-width: 200px; padding: 16px 32px; font-size: 18px; box-shadow: 0 6px 24px rgba(255,45,85,.45); }
-.go-btn[disabled] { opacity: .55; box-shadow: none; }
-.go-btn.end { background: #fff; color: #000; box-shadow: none; }
-/* Locked until the next daily live: a quiet countdown instead of the red button. */
-.go-btn.locked, .go-btn.locked[disabled] { opacity: 1; background: rgba(255,255,255,.16); color: #fff; box-shadow: none;
-  font-variant-numeric: tabular-nums; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.who-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
-.who-line h1 { font-size: 20px; margin: 0; overflow-wrap: anywhere; }
-.name { overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) {
+  .like-burst, .like-btn.pop svg, .live-banner { animation: none; }
+  .like-burst { display: none; }
+  .bar, .toast { transition: none; }
+}

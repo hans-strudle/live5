@@ -2,7 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { readFile, writeFile, appendFile, rename, stat } from 'node:fs/promises';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, createReadStream } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, createReadStream } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { isFragmentedMp4, defragmentMp4 } from './mp4.mjs';
 import { loadVapid, cleanSubscription, sendPush } from './push.mjs';
@@ -105,10 +105,19 @@ export function createApp({
     if (!f.endsWith('.json')) continue;
     const meta = readJson(path.join(streamDir, f), null);
     if (!meta || !meta.id) continue;
-    if (meta.status === 'live') { // the server stopped mid-broadcast
-      Object.assign(meta, { status: 'ended', endedAt: meta.endedAt ?? meta.startedAt, endReason: 'server-restart' });
+    if (meta.status === 'live') {
+      // The server stopped mid-broadcast. The saved details are from when it started, so take
+      // the size and end time from the recording itself.
+      let bytes = 0, endedAt = meta.startedAt;
+      try {
+        const st = statSync(path.join(streamDir, `${meta.id}.${meta.ext}`));
+        bytes = st.size;
+        endedAt = Math.max(meta.startedAt, Math.round(st.mtimeMs));
+      } catch {}
+      Object.assign(meta, { status: 'ended', endedAt, endReason: 'server-restart', bytes });
       writeFileSync(path.join(streamDir, f), JSON.stringify(meta, null, 2));
     }
+    if (meta.status === 'ended' && !meta.bytes) meta.empty = true; // nothing was recorded
     streams.set(meta.id, { ...meta, viewers: new Set() });
   }
 
@@ -137,7 +146,7 @@ export function createApp({
     const u = users.get(s.userId);
     const data = {
       title: `${u?.name ?? 'Someone'} just went live`,
-      body: `Watch now — it's only ${maxSeconds} seconds.`,
+      body: `Live for the next ${maxSeconds} seconds.`,
       url: `/watch/${s.id}`,
       icon: avatarOf(s.userId),
       tag: `live-${s.id}`,
@@ -202,7 +211,9 @@ export function createApp({
   // A recording with no playable samples is marked empty and left out of the feed.
   async function finalize(s) {
     try {
-      await s.lastAppend;
+      await s.lastAppend?.catch(() => {});
+      // Nothing arrived at all (any format): not a live worth showing or counting.
+      if (!s.bytes && !s.empty) { s.empty = true; avatars.delete(s.userId); await saveStream(s); return; }
       if (s.ext !== 'mp4' || s.replay || s.empty) return;
       let buf;
       try { buf = await readFile(videoFile(s)); } catch { buf = Buffer.alloc(0); }
@@ -354,11 +365,12 @@ export function createApp({
       let size = 0;
       req.on('data', (c) => {
         size += c.length;
-        if (size > limit) { reject(Object.assign(new Error('too large'), { code: 413 })); req.destroy(); return; }
+        if (size > limit) { reject(Object.assign(new Error('too large'), { status: 413 })); req.destroy(); return; }
         parts.push(c);
       });
       req.on('end', () => resolve(Buffer.concat(parts)));
-      req.on('error', reject);
+      // e.g. the sender went away mid-request
+      req.on('error', () => reject(Object.assign(new Error('request was cut off'), { status: 400 })));
     });
   }
 
@@ -369,10 +381,11 @@ export function createApp({
 
   // ---- routes ----
   async function handle(req, res) {
-    const url = new URL(req.url, 'http://x');
+    let url;
+    try { url = new URL(req.url, 'http://x'); } catch { return json(res, 400, { error: 'bad request' }); }
     const parts = url.pathname.split('/').filter(Boolean);
 
-    if (req.method === 'GET' && STATIC[url.pathname]) {
+    if (req.method === 'GET' && Object.hasOwn(STATIC, url.pathname)) {
       return sendPage(req, res, STATIC[url.pathname][0], { kind: 'home' });
     }
     const asset = req.method === 'GET' && ASSET.exec(url.pathname);
@@ -383,7 +396,7 @@ export function createApp({
       res.writeHead(200, { 'content-type': `${ASSET_TYPES[asset[2].toLowerCase()]}; charset=utf-8`, 'cache-control': 'no-cache' });
       return res.end(body);
     }
-    if (req.method === 'GET' && PAGES[parts[0]] && parts.length === 2) {
+    if (req.method === 'GET' && parts.length === 2 && Object.hasOwn(PAGES, parts[0])) {
       return sendPage(req, res, PAGES[parts[0]], { kind: parts[0], id: parts[1] });
     }
     // GET /oembed?url=<page url> — oEmbed for apps that look for it (title, author, thumbnail).
@@ -429,7 +442,7 @@ export function createApp({
     return `${proto}://${host}`;
   }
 
-  const SITE_DESCRIPTION = `Live for ${maxSeconds} seconds. No edits, no uploads: whatever you say goes out to the world.`;
+  const SITE_DESCRIPTION = `Live video, ${maxSeconds} seconds at a time. No uploads, no editing.`;
 
   async function posterSize(s) {
     if (!s.hasPoster) return null;
@@ -493,7 +506,7 @@ export function createApp({
       ['name', 'twitter:card', p.image ? 'summary_large_image' : 'summary'],
       ['name', 'twitter:title', p.title],
       ['name', 'twitter:description', p.description],
-      ['name', 'theme-color', '#0d0d10'],
+      ['name', 'theme-color', '#0b0b0a'],
     ];
     if (p.image) {
       const img = `${base}/api/streams/${p.image.id}/poster`;
@@ -585,9 +598,11 @@ export function createApp({
       if (!u) return json(res, 401, { error: 'unknown user' });
       const body = await readJsonBody(req);
       if (!body) return json(res, 400, { error: 'expected a JSON body' });
-      const type = String(body.type ?? '').slice(0, 200);
+      // The recorder's format, e.g. video/mp4;codecs=avc1.42E01E,mp4a.40.2. It is sent back as a
+      // content-type header, so only plain printable characters are kept.
+      const type = String(body.type ?? '').replace(/[^\x20-\x7e]/g, '').slice(0, 200);
       const base = type.split(';')[0].trim().toLowerCase();
-      if (!EXT[base]) return json(res, 400, { error: 'unsupported type' });
+      if (!Object.hasOwn(EXT, base)) return json(res, 400, { error: 'unsupported type' });
       for (const other of streams.values()) {
         if (other.userId === u.id && other.status === 'live') return json(res, 409, { error: 'you are already live' });
       }
@@ -646,7 +661,7 @@ export function createApp({
       s.busy = true;
       try {
         let body;
-        try { body = await readBody(req, maxChunkBytes); } catch (e) { return json(res, e.code ?? 400, { error: e.message }); }
+        try { body = await readBody(req, maxChunkBytes); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
         if (s.status !== 'live') return json(res, 409, { error: 'stream has ended' });
         if (s.bytes + body.length > maxBytes) { endStream(s, 'size-limit'); return json(res, 409, { error: 'size limit' }); }
         s.chunks.push(body);
@@ -655,7 +670,13 @@ export function createApp({
         for (const v of s.viewers) v.write(body);
         touch(s);
         s.lastAppend = appendFile(videoFile(s), body);
-        await s.lastAppend;
+        try { await s.lastAppend; } catch (e) {
+          // The recording can't be written (disk full?). A replay with a hole in it won't play,
+          // so stop here rather than carry on.
+          console.error(`writing ${s.id} failed`, e);
+          endStream(s, 'storage-error');
+          return json(res, 500, { error: 'could not save the broadcast' });
+        }
         return json(res, 200, { ok: true, seq });
       } finally {
         s.busy = false;
@@ -671,7 +692,8 @@ export function createApp({
       s.posterBusy = true;
       try {
         let body;
-        try { body = await readBody(req, MAX_POSTER_BYTES); } catch (e) { return json(res, e.code ?? 400, { error: e.message }); }
+        try { body = await readBody(req, MAX_POSTER_BYTES); } catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
+        if (s.status !== 'live') return json(res, 409, { error: 'stream has ended' });
         if (body.length < 4 || body[0] !== 0xff || body[1] !== 0xd8 || body[2] !== 0xff) {
           return json(res, 400, { error: 'expected a JPEG' });
         }
@@ -809,7 +831,17 @@ export function createApp({
   };
   const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
   server.on('close', () => { for (const s of streams.values()) endStream(s, 'shutdown'); });
-  return { server, streams, users };
+
+  // Stopping cleanly: end whatever is live, then wait until every recording, replay copy and
+  // list has been written.
+  async function shutdown() {
+    for (const s of streams.values()) endStream(s, 'shutdown');
+    const all = [...streams.values()];
+    await Promise.all(all.map((s) => s.finalizing));
+    await Promise.all(all.flatMap((s) => [s.saving, s.commentWrite, s.likeWrite]));
+    await Promise.all([usersWrite, pushWrite]);
+  }
+  return { server, streams, users, shutdown };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -822,7 +854,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const scheme = tls ? 'https' : 'http';
   // LIVE5_HOST=127.0.0.1 when a reverse proxy (e.g. Caddy on a server) is the only way in.
   const host = process.env.LIVE5_HOST || undefined;
-  createApp({ tls }).server.listen(port, host, () => {
+  const app = createApp({ tls });
+  // Ctrl+C or a service restart: finish writing before exiting, so a live in progress keeps
+  // its replay. A second signal exits straight away.
+  let stopping = false;
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      if (stopping) process.exit(1);
+      stopping = true;
+      app.server.close();
+      app.shutdown().catch((e) => console.error('shutting down failed', e)).finally(() => process.exit(0));
+    });
+  }
+  app.server.listen(port, host, () => {
     console.log(`live5 on ${scheme}://localhost:${port}`);
     for (const list of Object.values(networkInterfaces())) {
       for (const a of list ?? []) {

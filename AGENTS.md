@@ -34,6 +34,10 @@
 - Viewer playback relies on Media Source; keep the broadcaster preferring MP4 so iOS viewers can decode Android broadcasts.
 - Replays of MP4 recordings are served from `<id>.replay.mp4`, a plain (non-fragmented) copy made by `mp4.mjs` when the broadcast ends. Never modify the original recording.
 - The `/go` page must send the recorder's final piece after `stop()`. Android Chrome only delivers MP4 at fragment boundaries, so dropping it lost several seconds, or the whole video for short lives.
+- The `/go` page resends a piece of video that failed to send. It relies on the server's 409 answer naming the piece it `expected` next (one past the resent piece means it had arrived), so keep that field.
+- A live that recorded no bytes is marked `empty` whatever its format. After a crash, a broadcast left as `live` on disk is closed at startup using the recording's real size and time.
+- `mp4.mjs` reads files made by whoever was broadcasting: never loop on a count taken from the file without a bound.
+- Icons are inline SVG from `public/icons.js`, not emoji. Red (`--live`) is only for live state and the Go live buttons.
 - Do not deploy, publish, commit or push without the owner's authorization.
 
 ## Open questions

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createDecipheriv, createECDH, hkdfSync, randomBytes } from 'node:crypto';
@@ -11,8 +11,8 @@ import { defragmentMp4, isFragmentedMp4 } from '../mp4.mjs';
 // ---------- helpers ----------
 // Every test gets its own server and a throwaway data folder (never the real data/).
 async function start(t, opts = {}) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'live5-test-'));
-  const app = createApp({ dataDir, idleSeconds: 30, ...opts });
+  const dataDir = opts.dataDir ?? mkdtempSync(path.join(tmpdir(), 'live5-test-'));
+  const app = createApp({ idleSeconds: 30, ...opts, dataDir });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const close = async () => {
@@ -121,6 +121,34 @@ test('daily limit: refused after the limit, with when the next live frees up', a
   assert.ok(body.nextAt > Date.now());
 });
 
+test('a live that recorded nothing is dropped and does not use up the limit', async (t) => {
+  const app = await start(t);
+  const u = await newUser(app.base);
+  const { body: s } = await goLive(app.base, u);
+  await end(app.base, s);
+  await app.streams.get(s.id).finalizing;
+  assert.equal((await fetch(`${app.base}/api/streams/${s.id}`)).status, 404);
+  assert.equal((await getJson(app.base, `/api/users/${u.id}`)).broadcasts.length, 0);
+  assert.equal((await goLive(app.base, u)).status, 201, 'can go live again straight away');
+});
+
+test('a live cut short by a server crash comes back as a replay after restart', async (t) => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'live5-test-'));
+  mkdirSync(path.join(dataDir, 'streams'));
+  // what is on disk mid-broadcast: details saved at the start (0 bytes), and the recording so far
+  const meta = { id: 'crashed', userId: 'u1', type: 'video/webm', ext: 'webm', status: 'live', startedAt: Date.now() - 5000, bytes: 0 };
+  writeFileSync(path.join(dataDir, 'streams', 'crashed.json'), JSON.stringify(meta));
+  writeFileSync(path.join(dataDir, 'streams', 'crashed.webm'), 'recorded');
+  const app = await start(t, { dataDir });
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const s = app.streams.get('crashed');
+  assert.equal(s.status, 'ended');
+  assert.equal(s.bytes, 8);
+  assert.ok(!s.empty);
+  assert.deepEqual((await getJson(app.base, '/api/streams')).items.map((x) => x.id), ['crashed']);
+  assert.equal(await (await fetch(`${app.base}/api/streams/crashed/video`)).text(), 'recorded');
+});
+
 // ---------- video ----------
 test('pieces need the token, must be in order, and stop after the end', async (t) => {
   const app = await start(t);
@@ -129,7 +157,9 @@ test('pieces need the token, must be in order, and stop after the end', async (t
   assert.equal((await chunk(app.base, s, 0, 'a', 'x'.repeat(32))).status, 403);
   assert.equal((await chunk(app.base, s, 1, 'a')).status, 409, 'cannot skip ahead');
   assert.equal((await chunk(app.base, s, 0, 'a')).status, 200);
-  assert.equal((await chunk(app.base, s, 0, 'x')).status, 409, 'cannot replace a piece');
+  const again = await chunk(app.base, s, 0, 'x');
+  assert.equal(again.status, 409, 'cannot replace a piece');
+  assert.equal((await again.json()).expected, 1, 'says which piece is next, so a resend after a lost answer can tell it arrived');
   assert.equal((await chunk(app.base, s, 1, 'b')).status, 200);
   await end(app.base, s);
   assert.ok([403, 409].includes((await chunk(app.base, s, 2, 'c')).status), 'nothing can be added after the end');
@@ -176,11 +206,12 @@ test('the server enforces the time limit and the size limit', async (t) => {
   const app = await start(t, { maxSeconds: 0.2, finalPieceGrace: 0, maxBytes: 4, maxPerDay: 5 });
   const u = await newUser(app.base);
   const { body: s1 } = await goLive(app.base, u);
+  assert.equal((await chunk(app.base, s1, 0, 'a')).status, 200);
   await new Promise((r) => setTimeout(r, 300));
   const info = await getJson(app.base, `/api/streams/${s1.id}`);
   assert.equal(info.status, 'ended');
   assert.equal(info.endReason, 'time-limit');
-  assert.ok([403, 409].includes((await chunk(app.base, s1, 0, 'a')).status), 'nothing after the time limit');
+  assert.ok([403, 409].includes((await chunk(app.base, s1, 1, 'b')).status), 'nothing after the time limit');
 
   const { body: s2 } = await goLive(app.base, u);
   assert.equal((await chunk(app.base, s2, 0, 'abc')).status, 200);
@@ -306,6 +337,16 @@ test('only files in public/ are served', async (t) => {
   assert.equal((await fetch(`${app.base}/data/users.json`)).status, 404);
 });
 
+test('built-in object names are not mistaken for pages or video types', async (t) => {
+  const app = await start(t);
+  assert.equal((await fetch(`${app.base}/__proto__/x`)).status, 404);
+  assert.equal((await fetch(`${app.base}/constructor/x`)).status, 404);
+  const u = await newUser(app.base);
+  assert.equal((await goLive(app.base, u, 'constructor')).status, 400);
+  const odd = await goLive(app.base, u, 'video/webm;codecs=vp8\r\nx-evil: 1');
+  assert.equal(odd.body.type, 'video/webm;codecs=vp8x-evil: 1', 'line breaks never reach the content-type header');
+});
+
 test('jpegSize reads the frame size', () => {
   const sof = Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x02, 0x80, 0x01, 0x68, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   assert.deepEqual(jpegSize(sof), { width: 360, height: 640 });
@@ -370,4 +411,15 @@ test('fragmented MP4 recordings become a plain MP4 with the same sample bytes', 
   const mvhd = plain.indexOf(Buffer.from('mvhd'));
   assert.equal(plain.readUInt32BE(mvhd + 4 + 16), Math.round((4000 * 1000) / 30000));
   assert.equal(defragmentMp4(Buffer.from('nothing')), null);
+});
+
+test('a recording that claims billions of samples is refused, not processed', () => {
+  const { file } = fragmentedMp4();
+  // first trun: no per-sample fields (so nothing else stops the loop) and a count of 4 billion
+  const trun = file.indexOf(Buffer.from('trun'));
+  file.writeUInt32BE(0x001, trun + 4);
+  file.writeUInt32BE(0xffffffff, trun + 8);
+  const started = Date.now();
+  assert.equal(defragmentMp4(file), null);
+  assert.ok(Date.now() - started < 2000);
 });

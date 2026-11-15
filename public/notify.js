@@ -1,8 +1,9 @@
-// The 🔔 button: turn phone notifications ("Sam just went live") on or off for this device.
+// The bell button: turn phone notifications ("Sam just went live") on or off for this device.
 // Uses Web Push through the service worker (/sw.js). On iPhone/iPad, Apple only allows web
 // notifications for sites added to the Home Screen, so in a Safari tab the button explains that.
 import { getUser, authHeaders } from '/me.js';
 import { toast } from '/share.js';
+import { icon } from '/icons.js';
 
 const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS reports as Mac
@@ -15,9 +16,9 @@ function keyBytes(b64u) {
 }
 
 function render(btn, on) {
-  btn.textContent = on ? '🔔' : '🔕';
+  btn.replaceChildren(icon(on ? 'bell' : 'bellOff', 20));
   btn.classList.toggle('on', on);
-  const label = on ? 'Notifications on: tap to turn off' : 'Get notified when someone goes live';
+  const label = on ? 'Live alerts are on. Tap to turn them off.' : 'Get an alert when someone goes live';
   btn.setAttribute('aria-label', label);
   btn.title = label;
 }
@@ -35,14 +36,14 @@ function explainHomeScreen() {
   const d = document.createElement('dialog');
   d.className = 'welcome';
   d.innerHTML = `
-    <h2>Get live alerts</h2>
-    <p class="welcome-lead">On iPhone, notifications work once live5 is on your Home Screen.</p>
-    <ul>
-      <li>Tap <strong>Share</strong> in Safari's toolbar.</li>
-      <li>Choose <strong>Add to Home Screen</strong>.</li>
-      <li>Open live5 from your Home Screen and tap 🔕 again.</li>
-    </ul>
-    <button class="btn" type="button">Got it</button>`;
+    <h2>Live alerts on iPhone</h2>
+    <p class="welcome-lead">iPhones only allow alerts from sites on the Home Screen.</p>
+    <ol>
+      <li>Tap Share in Safari’s toolbar.</li>
+      <li>Choose Add to Home Screen.</li>
+      <li>Open live5 from there and tap the bell again.</li>
+    </ol>
+    <button class="btn" type="button">OK</button>`;
   const close = () => { if (d.open) d.close(); d.remove(); };
   d.querySelector('button').onclick = close;
   d.addEventListener('cancel', close);
@@ -81,14 +82,14 @@ export async function setupBell(btn) {
       }
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        toast(permission === 'denied' ? 'Notifications are blocked in your settings' : 'Live alerts not turned on');
+        toast(permission === 'denied' ? 'Notifications are blocked in your browser settings' : 'Live alerts are still off');
         return;
       }
       const { publicKey } = await (await fetch('/api/push/key')).json();
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
       await saveSubscription(sub);
       render(btn, true);
-      toast('You’ll be notified when someone goes live');
+      toast('Live alerts on');
     } catch {
       toast('Couldn’t turn on live alerts');
     } finally {

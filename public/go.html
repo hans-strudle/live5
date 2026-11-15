@@ -23,7 +23,7 @@
   <!-- After a live: the last camera frame stays on screen instead of going black. -->
   <img class="endframe" id="endframe" alt="" hidden>
   <div class="studio-top">
-    <a class="logo" href="/" aria-label="Back to live5">live<span>5</span></a>
+    <a class="logo" href="/" aria-label="Back to live5">live5</a>
     <div class="badge" id="badge">OFF AIR</div>
     <div class="timer" id="timer" hidden></div>
   </div>
@@ -31,7 +31,7 @@
   <div class="studio-bottom">
     <p class="as" id="as"></p>
     <div class="controls">
-      <button class="btn go-btn" id="go" disabled>Go live</button>
+      <button class="btn live go-btn" id="go" disabled>Go live</button>
       <button class="btn go-btn end" id="stop" hidden>End</button>
       <button class="live-share" id="live-share" type="button" hidden aria-label="Share your live" title="Share your live"></button>
       <button class="btn ghost" id="retry" hidden>Try camera again</button>
@@ -41,13 +41,13 @@
     <p class="share" id="share" hidden></p>
     <!-- End screen: shown once a live has ended. -->
     <div class="end-panel" id="end" hidden>
-      <h2 id="end-title">Your live has ended</h2>
+      <h2 id="end-title">Live ended</h2>
       <p id="end-sub"></p>
       <div class="end-actions">
-        <button class="btn" id="replay" type="button">▶ Watch replay</button>
+        <button class="btn" id="replay" type="button">Watch replay</button>
         <button class="btn ghost-light" id="end-share" type="button">Share</button>
       </div>
-      <p class="end-links"><a href="/go">Go live again</a> · <a id="end-profile" href="/">Your profile</a> · <a href="/">Home</a></p>
+      <p class="end-links"><span id="end-again" hidden><a href="/go">Go live again</a> · </span><a id="end-profile" href="/">Your profile</a> · <a href="/">Back to the feed</a></p>
     </div>
   </div>
 </div>
@@ -56,7 +56,10 @@
   import { shareStream, shareIcon } from '/share.js';
   const $ = (id) => document.getElementById(id);
   const cam = $('cam'), go = $('go'), stop = $('stop'), retry = $('retry'), msg = $('msg');
+  const TIME_UP = 'Time is up.', STOPPED = 'You ended the broadcast.';
   let media, recorder, stream, mime, seq = 0, queue = Promise.resolve(), tick, ending = false;
+  let lost = false; // a piece of video could not be delivered, so no later piece can be either
+  let wakeLock = null;
   let startedAt = 0, endDone = Promise.resolve(); // when the live started; resolves once the server has ended it
 
   // MP4 (H.264/AAC) first: it plays on iOS and Android alike. WebM is the fallback.
@@ -114,9 +117,7 @@
     cam.srcObject = media;
     cam.play().catch(() => {});
     go.disabled = !canGoLive();
-    // Camera ready: no message for now (was "Pressing Go live broadcasts immediately. There is no
-    // preview or undo." — hidden at the owner's request, 2026-11-14).
-    msg.textContent = '';
+    msg.textContent = ''; // camera ready: nothing to say
   }
   retry.onclick = openCamera;
 
@@ -152,7 +153,7 @@
   let lockTick = null;
   function renderLockedButton() {
     if (recorder || !usage || usage.leftToday > 0 || !usage.nextAt) return;
-    go.textContent = `🔒 Next live in ${untilText(usage.nextAt - Date.now())}`;
+    go.textContent = `Next live in ${untilText(usage.nextAt - Date.now())}`;
   }
 
   function renderQuota() {
@@ -167,12 +168,11 @@
     const hours = usage.limitHours;
     if (out) {
       const when = usage.nextAt ? whenText(usage.nextAt) : null;
-      q.textContent = one
-        ? `You've had your live.${when ? ` Your next one unlocks ${when}.` : ''}`
-        : `You've used all ${usage.dailyLimit} lives for now.${when ? ` Your next one is available ${when}.` : ''}`;
+      const used = one ? `One live every ${hours} hours.` : `All ${usage.dailyLimit} lives used.`;
+      q.textContent = when ? `${used} Next one ${when}.` : used;
     } else {
       q.textContent = one
-        ? `One live every ${hours} hours. Make it count.`
+        ? `One live every ${hours} hours.`
         : `${usage.leftToday} of ${usage.dailyLimit} lives left (per ${hours} hours)`;
     }
     if (!recorder) {
@@ -237,14 +237,44 @@
     renderAs();
   })();
 
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Deliver one piece of video. A phone's connection drops for a moment now and then, so a
+  // failed request is tried again (the server ends a live that goes quiet for about 10 seconds).
+  // Returns 'ok', 'offline' (never got through) or 'ended' (the server has closed the broadcast).
+  async function deliver(n, blob) {
+    for (let attempt = 0; ; attempt++) {
+      let r = null;
+      try {
+        r = await fetch(`/api/streams/${stream.id}/chunks?seq=${n}`, {
+          method: 'POST', headers: { 'x-broadcast-token': stream.token }, body: blob,
+          signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined,
+        });
+      } catch {}
+      if (r && r.ok) return 'ok';
+      if (r) {
+        if (r.status !== 409) return 'ended';
+        // 409 names the piece the server expects next. One past this: it arrived and only the
+        // answer was lost. This one: the server is still busy with the earlier attempt.
+        const expected = (await r.json().catch(() => null))?.expected;
+        if (expected === n + 1) return 'ok';
+        if (expected !== n) return 'ended';
+      }
+      if (attempt >= 4) return r ? 'ended' : 'offline';
+      await sleep(300 * 2 ** attempt);
+    }
+  }
+
+  // Pieces go one at a time, in order.
   function send(blob) {
     const n = seq++;
     queue = queue.then(async () => {
-      const r = await fetch(`/api/streams/${stream.id}/chunks?seq=${n}`, {
-        method: 'POST', headers: { 'x-broadcast-token': stream.token }, body: blob,
-      });
-      if (!r.ok) finish('The broadcast ended.');
-    }).catch(() => finish('Connection lost. The broadcast ended.'));
+      if (lost) return;
+      const result = await deliver(n, blob);
+      if (result === 'ok') return;
+      lost = true;
+      finish(result === 'offline' ? 'The connection was lost.' : 'The broadcast was closed.');
+    });
   }
 
   // Keep the last camera frame on screen (as the preview showed it) so ending isn't a black screen.
@@ -264,6 +294,7 @@
     if (ending) return;
     ending = true;
     clearInterval(tick);
+    wakeLock?.release().catch(() => {});
     freezeFrame();
     // Stopping hands over the last recorded piece (on Android Chrome this can be several
     // seconds of video). Wait for it to be sent before ending the broadcast.
@@ -285,7 +316,10 @@
     $('studio').classList.remove('is-live');
     $('studio').classList.add('is-ended');
     if (!stream) { // never went live (e.g. couldn't start): just say so
-      msg.innerHTML = `${text} <a href="/go">Try again</a>`;
+      const again = document.createElement('a');
+      again.href = '/go';
+      again.textContent = 'Try again';
+      msg.replaceChildren(`${text} `, again);
       return;
     }
     showEndScreen(text);
@@ -294,9 +328,11 @@
   // The end screen: what happened, how long it was, and what next (replay, share, go again).
   function showEndScreen(text) {
     const secs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-    $('end-title').textContent = text === 'Time is up.' ? 'That’s a wrap!' : 'Your live has ended';
-    $('end-sub').textContent = `${secs} second${secs === 1 ? '' : 's'} live${text === 'Time is up.' ? ' — the full time' : ''}. ${text === 'Time is up.' || text === 'You ended the broadcast.' ? '' : text}`.trim();
+    $('end-title').textContent = text === TIME_UP ? 'Time’s up' : 'Live ended';
+    const why = text === TIME_UP || text === STOPPED ? '' : ` ${text}`;
+    $('end-sub').textContent = `You were on for ${secs} second${secs === 1 ? '' : 's'}.${why}`;
     $('end-profile').href = `/u/${user.id}`;
+    $('end-again').hidden = !(usage && usage.leftToday > 0); // only if the limit allows another
     $('as').hidden = true;
     $('share').hidden = true;
     go.hidden = true;
@@ -307,7 +343,7 @@
     // Play the replay right here, once the last piece has been sent and the server has it.
     $('replay').onclick = async () => {
       $('replay').disabled = true;
-      $('replay').textContent = 'Loading replay…';
+      $('replay').textContent = 'Loading…';
       await endDone; // last piece sent and the broadcast closed, so the replay is complete
       cam.srcObject = null;
       cam.classList.add('replay');
@@ -319,7 +355,7 @@
         $('replay').hidden = true;
         $('end-title').textContent = 'Your replay';
       };
-      cam.onerror = () => { $('replay').disabled = false; $('replay').textContent = '▶ Watch replay'; };
+      cam.onerror = () => { $('replay').disabled = false; $('replay').textContent = 'Watch replay'; };
       cam.play().catch(() => { cam.muted = true; cam.play().catch(() => {}); });
     };
   }
@@ -352,6 +388,10 @@
     queue = new Promise((r) => { created = r; });
     // Pieces that arrive while ending (the recorder's final flush) are still sent.
     recorder.ondataavailable = (e) => { if (e.data.size) send(e.data); };
+    // The recorder stopping by itself means the camera went away (a call came in, permission
+    // was taken back): say so now rather than showing LIVE over nothing until the time runs out.
+    recorder.onstop = () => { if (!ending) finish('The camera stopped.'); };
+    recorder.onerror = () => finish('Recording failed.');
     recorder.start(500);
 
     // The recorder reports its real format (with codecs) once started; viewers need it.
@@ -362,13 +402,18 @@
     if (!r || !r.ok) {
       const err = r && (await r.json().catch(() => null));
       takeUsage(err); // a 429 carries the current usage and when the next live frees up
-      finish(`Could not go live${err && err.error ? `: ${err.error}` : ''}.`);
+      finish(`Couldn’t go live${err && err.error ? `: ${err.error}` : ''}.`);
       return;
     }
     stream = await r.json();
     takeUsage(stream);
     created();
     setTimeout(() => sendPreview().catch(() => {}), 800);
+
+    // Keep the screen on for the length of the live (where the browser can).
+    navigator.wakeLock?.request('screen').then((lock) => {
+      if (ending) lock.release().catch(() => {}); else wakeLock = lock;
+    }).catch(() => {});
 
     startedAt = Date.now();
     const started = startedAt, limit = stream.maxSeconds * 1000;
@@ -385,12 +430,22 @@
     msg.textContent = '';
     tick = setInterval(() => {
       const left = Math.max(0, limit - (Date.now() - started));
-      $('timer').textContent = `${Math.ceil(left / 1000)}s`;
+      const secs = Math.ceil(left / 1000);
+      $('timer').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
       $('bar').style.width = `${100 - (left / limit) * 100}%`;
-      if (left <= 0) finish('Time is up.');
+      if (left <= 0) finish(TIME_UP);
     }, 250);
   };
-  stop.onclick = () => finish('You ended the broadcast.');
+  stop.onclick = () => finish(STOPPED);
+
+  // Leaving the page mid-live: tell the server now, so viewers aren't left on a frozen picture
+  // until it notices by itself.
+  addEventListener('pagehide', () => {
+    if (!stream || ending) return;
+    fetch(`/api/streams/${stream.id}/end`, {
+      method: 'POST', headers: { 'x-broadcast-token': stream.token }, keepalive: true,
+    }).catch(() => {});
+  });
 
   // The feed's preview image: one frame from the live camera, taken just after going live.
   async function sendPreview() {

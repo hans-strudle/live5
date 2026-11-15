@@ -2,9 +2,10 @@
 // chat) and lets anyone add one. While open it checks for new comments every few seconds.
 import { avatarNode } from '/feed.js';
 import { clearUser, authHeaders, ensureUser } from '/me.js';
+import { icon } from '/icons.js';
 
 // Asked after pressing Send, only by someone without a profile on this device yet.
-const NAME_PROMPT = { title: 'Your name', note: 'Shown with your comment. No account needed.', action: 'Post comment' };
+const NAME_PROMPT = { title: 'Your name', note: 'Shown with your comment. No account needed.', action: 'Post' };
 
 const POLL_MS = 4000;
 let current = null; // the open sheet, if any
@@ -32,19 +33,20 @@ export function openComments(stream, { onCount } = {}) {
   dialog.setAttribute('aria-label', 'Comments');
   const head = el('header', 'sheet-head');
   const title = el('h2', null, 'Comments');
-  const closeBtn = el('button', 'sheet-close', '✕');
+  const closeBtn = el('button', 'sheet-close');
+  closeBtn.append(icon('close', 20));
   closeBtn.type = 'button';
   closeBtn.setAttribute('aria-label', 'Close comments');
   head.append(title, closeBtn);
 
   const list = el('ol', 'comments');
-  const empty = el('p', 'comments-empty', 'No comments yet. Say something.');
+  const empty = el('p', 'comments-empty', 'No comments yet.');
   empty.hidden = true;
 
   const form = el('form', 'comment-form');
   const row = el('div', 'comment-row');
   const textInput = el('input', 'comment-text');
-  Object.assign(textInput, { name: 'text', maxLength: 200, placeholder: 'Add a comment…', autocomplete: 'off', required: true });
+  Object.assign(textInput, { name: 'text', maxLength: 200, placeholder: 'Add a comment', autocomplete: 'off', required: true });
   textInput.setAttribute('enterkeyhint', 'send');
   const send = el('button', 'btn', 'Send');
   send.type = 'submit';

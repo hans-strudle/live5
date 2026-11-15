@@ -5,6 +5,7 @@
 import { openComments } from '/comments.js';
 import { shareStream, shareIcon } from '/share.js';
 import { getUser, viewerId } from '/me.js';
+import { icon } from '/icons.js';
 
 const MS = window.ManagedMediaSource || window.MediaSource;
 const PAGE = 8;
@@ -44,11 +45,11 @@ function mseType(type) {
 function updateSoundUi() {
   const audible = soundOn && !soundBlocked;
   document.querySelectorAll('.sound').forEach((b) => {
-    b.textContent = audible ? '🔊' : '🔇';
+    b.replaceChildren(icon(audible ? 'sound' : 'muted'));
     b.setAttribute('aria-label', audible ? 'Mute' : 'Unmute');
   });
   if (!soundHint && soundOn && soundBlocked) {
-    soundHint = el('div', 'sound-hint', '🔇 Tap for sound');
+    soundHint = el('div', 'sound-hint', 'Tap for sound');
     soundHint.setAttribute('aria-hidden', 'true');
     document.body.append(soundHint);
   }
@@ -70,16 +71,7 @@ function setLiked(streamId, on) {
     }).catch(() => {});
   }
 }
-function heartIcon() {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', '24');
-  svg.setAttribute('height', '24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.innerHTML = '<path d="M12 20.5s-7.5-4.6-9.3-9.2C1.4 8 3.4 4.5 6.9 4.5c2 0 3.6 1.1 5.1 3 1.5-1.9 3.1-3 5.1-3 3.5 0 5.5 3.5 4.2 6.8-1.8 4.6-9.3 9.2-9.3 9.2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>';
-  return svg;
-}
+const heartIcon = () => icon('heart');
 
 function setSound(on) {
   soundOn = on;
@@ -184,7 +176,8 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     info.append(who, meta);
 
     const audible = soundOn && !soundBlocked;
-    const sound = el('button', 'sound', audible ? '🔊' : '🔇');
+    const sound = el('button', 'sound');
+    sound.append(icon(audible ? 'sound' : 'muted'));
     sound.type = 'button';
     sound.setAttribute('aria-label', audible ? 'Mute' : 'Unmute');
     sound.onclick = (e) => {
@@ -206,7 +199,9 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     talk.type = 'button';
     talk.setAttribute('aria-label', 'Comments');
     const talkCount = el('span', 'talk-count');
-    talk.append(el('span', 'talk-icon', '💬'), talkCount);
+    const talkIcon = el('span', 'talk-icon');
+    talkIcon.append(icon('comment'));
+    talk.append(talkIcon, talkCount);
     const showCount = (n) => { talkCount.textContent = n ? String(n) : ''; };
     showCount(s.commentCount);
     talk.onclick = (e) => {
@@ -279,9 +274,21 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
         bar.style.width = `${(video.currentTime / video.duration) * 100}%`;
       }
     };
-    video.onerror = () => showNote('This video can’t play in this browser.');
+    // A removed source (detach) isn't a failure; anything else is. A broken live is tried again
+    // by the regular check further down: as a live while it lasts, as a replay once it's over.
+    video.onerror = () => {
+      if (!card.attached) return;
+      card.broken = true;
+      showNote(card.stream.status === 'live' ? 'Can’t play this live here. The replay will follow.' : 'This video can’t play in this browser.');
+    };
+    video.onplaying = () => { note.hidden = true; };
 
-    const card = { stream: s, node, video, badge, meta, note, progress, attached: false, abort: null, objectUrl: null };
+    // mode: how the video is being played ('mse' = streamed into Media Source, 'file' = a plain
+    // video URL). broken: playback failed.
+    const card = {
+      stream: s, node, video, badge, meta, note, progress,
+      attached: false, abort: null, objectUrl: null, mode: null, broken: false,
+    };
     node.card = card;
 
     function showNote(text) { note.textContent = text; note.hidden = false; }
@@ -293,10 +300,11 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
   function render(card) {
     const s = card.stream;
     const live = s.status === 'live';
-    card.badge.textContent = live ? 'LIVE' : 'REPLAY';
+    card.badge.textContent = 'LIVE';
     card.badge.classList.toggle('on', live);
+    card.badge.hidden = !live; // a replay needs no label
     card.meta.textContent = live
-      ? `Live now · ${s.viewers} watching`
+      ? `${s.viewers} watching`
       : `${ago(s.startedAt)}${s.durationMs ? ` · ${seconds(s.durationMs)}` : ''}`;
     card.progress.hidden = live;
   }
@@ -308,6 +316,8 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     const s = card.stream;
     const url = `/api/streams/${s.id}/video`;
     const type = s.status === 'live' ? mseType(s.type) : null;
+    card.mode = type ? 'mse' : 'file';
+    card.broken = false;
     if (type) playLive(card, type, url);
     else playReplay(card, url);
   }
@@ -325,6 +335,16 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     if (card.stream.status !== 'live') return;
     card.stream = { ...card.stream, status: 'ended', endedAt: card.stream.endedAt ?? Date.now() };
     render(card);
+  }
+
+  // Start a card's video over, e.g. after losing a live or when it has become a replay.
+  function reload(card) {
+    detach(card);
+    card.note.hidden = true;
+    const i = cards.indexOf(card);
+    if (Math.abs(i - active) > 1) return; // far away: it loads when scrolled to
+    attach(card);
+    if (i === active) playWithSound(card.video);
   }
 
   function detach(card) {
@@ -350,14 +370,22 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     v.src = card.objectUrl;
     ms.addEventListener('sourceopen', async () => {
       let sb;
-      try { sb = ms.addSourceBuffer(type); } catch { card.showNote('This live can’t play in this browser.'); return; }
+      try { sb = ms.addSourceBuffer(type); } catch {
+        card.broken = true;
+        card.showNote('Can’t play this live here. The replay will follow.');
+        return;
+      }
       const append = (buf) => new Promise((resolve, reject) => {
-        sb.addEventListener('updateend', resolve, { once: true });
-        sb.addEventListener('error', reject, { once: true });
-        sb.appendBuffer(buf);
+        const done = () => { sb.removeEventListener('updateend', ok); sb.removeEventListener('error', bad); };
+        const ok = () => { done(); resolve(); };
+        const bad = () => { done(); reject(new Error('append failed')); };
+        sb.addEventListener('updateend', ok);
+        sb.addEventListener('error', bad);
+        try { sb.appendBuffer(buf); } catch (e) { done(); reject(e); }
       });
       try {
         const res = await fetch(url, { signal: ctrl.signal });
+        if (!res.ok || !res.body) throw new Error('not available');
         // The live ended before we got here: the server sent the finished replay, which Media
         // Source can't take. Play it as an ordinary video instead.
         if (res.headers.get('accept-ranges') === 'bytes') {
@@ -382,7 +410,9 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
         if (ms.readyState === 'open') ms.endOfStream();
         markEnded(card);
       } catch {
-        if (!ctrl.signal.aborted) card.showNote('Lost the connection to this live.');
+        if (ctrl.signal.aborted) return;
+        card.broken = true;
+        card.showNote('Lost the connection. Trying again…');
       }
     }, { once: true });
   }
@@ -443,7 +473,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
       for (const s of page.items) addCard(s);
       if (!cards.length) showEmpty();
     } catch {
-      if (!cards.length) showEmpty('Could not load the feed. Pull down or reload to try again.');
+      if (!cards.length) showEmpty('Couldn’t load the feed. Reload to try again.');
     } finally {
       loading = false;
     }
@@ -453,7 +483,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     if (root.querySelector('.card-empty')) return;
     const box = el('section', 'card card-empty');
     box.append(el('h2', null, emptyTitle), el('p', 'muted', text || emptyText));
-    const go = el('a', 'btn', 'Go live');
+    const go = el('a', 'btn live', 'Go live');
     go.href = '/go';
     box.append(go);
     root.append(box);
@@ -484,7 +514,8 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
   const bannerText = el('div', 'live-banner-text');
   const bannerWatch = el('button', 'btn', 'Watch');
   bannerWatch.type = 'button';
-  const bannerClose = el('button', 'live-banner-close', '✕');
+  const bannerClose = el('button', 'live-banner-close');
+  bannerClose.append(icon('close', 18));
   bannerClose.type = 'button';
   bannerClose.setAttribute('aria-label', 'Dismiss');
   banner.append(bannerPic, bannerText, bannerWatch, bannerClose);
@@ -499,7 +530,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     bannerText.replaceChildren();
     const name = el('strong', null, s.name);
     const others = list.length - 1;
-    bannerText.append(name, others ? ` and ${others} ${others === 1 ? 'other' : 'others'} just went live` : ' just went live');
+    bannerText.append(name, others ? ` and ${others} ${others === 1 ? 'other' : 'others'} are live` : ' is live');
     banner.hidden = false;
     clearTimeout(bannerTimer);
     bannerTimer = setTimeout(hideBanner, 12000);
@@ -547,10 +578,17 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
       for (const card of cards) {
         const fresh = liveNow.get(card.stream.id);
         if (card.stream.status !== 'live') continue;
-        if (fresh) { card.stream.viewers = fresh.viewers; render(card); }
-        // Ended since the feed loaded. A card that's already streaming it finishes on its own;
-        // any other will play it as a replay.
-        else if (!card.attached) markEnded(card);
+        if (fresh) {
+          card.stream.viewers = fresh.viewers;
+          render(card);
+          if (card.broken && card.attached) reload(card); // lost it mid-live: connect again
+        } else if (!card.attached) {
+          markEnded(card); // ended since the feed loaded; it will play as a replay
+        } else if (card.broken || card.mode === 'file') {
+          // Ended, and this card wasn't streaming it properly: show the replay instead.
+          markEnded(card);
+          if (card.broken) reload(card);
+        } // otherwise the card is streaming it and finishes on its own
       }
       const fresh = items.filter((s) => !known.has(s.id) && !announced.has(s.id) && !(me && s.userId === me.id));
       fresh.forEach((s) => announced.add(s.id));
