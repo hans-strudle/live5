@@ -1,4 +1,4 @@
-// live5 service worker: shows "Sam is recording right now" notifications and opens the take when tapped.
+// 1take service worker: shows "Sam is recording right now" notifications and opens the take when tapped.
 // No offline caching.
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));

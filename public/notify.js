@@ -41,7 +41,7 @@ function explainHomeScreen() {
     <ol>
       <li>Tap Share in Safari’s toolbar.</li>
       <li>Choose Add to Home Screen.</li>
-      <li>Open live5 from there and tap the bell again.</li>
+      <li>Open 1take from there and tap the bell again.</li>
     </ol>
     <button class="btn" type="button">OK</button>`;
   const close = () => { if (d.open) d.close(); d.remove(); };

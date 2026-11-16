@@ -1,4 +1,4 @@
-// This device's live5 user (no login): { id, name, secret } kept in localStorage.
+// This device's 1take user (no login): { id, name, secret } kept in localStorage.
 // The same record the Go live page creates; pages that need to act as the user import this.
 const KEY = 'live5:user';
 

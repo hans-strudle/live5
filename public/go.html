@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Record · live5</title>
+  <title>Record · 1take</title>
   <!--META-->
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="live5">
+  <meta name="apple-mobile-web-app-title" content="1take">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="/app.css">
-  <script src="/welcome.js" defer></script>
+  <script type="module" src="/welcome.js"></script>
 </head>
 <body>
 <!-- The studio: the camera fills the screen; status across the top, controls over the bottom.
@@ -24,9 +24,10 @@
   <!-- After a take: the last camera frame stays on screen instead of going black. -->
   <img class="endframe" id="endframe" alt="" hidden>
   <div class="studio-top">
-    <a class="logo" href="/" aria-label="Back to live5">live5</a>
+    <a class="logo" href="/" aria-label="Back to 1take">1take</a>
     <div class="badge" id="badge">READY</div>
     <div class="timer" id="timer" hidden></div>
+    <button class="help-btn" type="button" data-help hidden aria-label="How 1take works" title="How 1take works"></button>
     <button class="flip-btn" id="flip" type="button" hidden aria-label="Switch camera" title="Switch camera"></button>
   </div>
   <div class="bar" id="bar"></div>

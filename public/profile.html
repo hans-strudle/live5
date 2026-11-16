@@ -3,20 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Profile · live5</title>
+  <title>Profile · 1take</title>
   <!--META-->
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="live5">
+  <meta name="apple-mobile-web-app-title" content="1take">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="/app.css">
-  <script src="/welcome.js" defer></script>
+  <script type="module" src="/welcome.js"></script>
 </head>
 <body class="feed-page">
   <header class="float-header">
-    <a class="logo" href="/">live5</a>
-    <nav><button class="bell" id="bell" type="button" hidden></button><a class="btn live" href="/go">Record</a></nav>
+    <a class="logo" href="/">1take</a>
+    <nav><button class="help-btn" type="button" data-help hidden aria-label="How 1take works" title="How 1take works"></button><button class="bell" id="bell" type="button" hidden></button><a class="btn live" href="/go">Record</a></nav>
   </header>
   <main class="feed" id="feed">
     <!-- Profile heading at the top of the page; it scrolls away with the feed, and this
@@ -47,7 +47,7 @@
       const u = await r.json();
       const count = u.broadcasts.filter((b) => b.status === 'live' || b.endedAt).length;
       const liveNow = u.broadcasts.some((b) => b.status === 'live');
-      document.title = `${u.name} · live5`;
+      document.title = `${u.name} · 1take`;
       $('name').textContent = u.name;
       const avatar = avatarNode(u.avatar, u.name, `avatar lg${liveNow ? ' is-live' : ''}`);
       avatar.id = 'avatar';

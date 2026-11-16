@@ -9,7 +9,8 @@ const SHAPES = {
   muted: `${SPEAKER}<path d="M16 9.5l5 5M21 9.5l-5 5"/>`,
   bell: BELL,
   bellOff: `${BELL}<path d="M4 4l16 16"/>`,
-  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.9 2.1c-.9.6-1.4 1.1-1.4 2.1"/><path d="M12 16.8v.2"/>',
+  close:'<path d="M6 6l12 12M18 6L6 18"/>',
   flip: '<path d="M20 4.5v4h-4M4 12a8 8 0 0 1 13.7-5.6L20 8.5"/><path d="M4 19.5v-4h4M20 12a8 8 0 0 1-13.7 5.6L4 15.5"/>',
 };
 

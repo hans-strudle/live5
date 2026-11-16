@@ -318,11 +318,11 @@ test('link previews escape names; oEmbed describes broadcasts and profiles', asy
   const u = await newUser(app.base, '"><script>x</script>');
   const html = await (await fetch(`${app.base}/u/${u.id}`)).text();
   assert.ok(!html.includes('<script>x</script>'));
-  assert.ok(html.includes('&quot;&gt;&lt;script&gt;x&lt;/script&gt; on live5'));
+  assert.ok(html.includes('&quot;&gt;&lt;script&gt;x&lt;/script&gt; on 1take'));
   const { body: s } = await goLive(app.base, u);
   const page = `${app.base}/watch/${s.id}`;
   const watch = await (await fetch(page)).text();
-  assert.match(watch, /is recording on live5/);
+  assert.match(watch, /is recording on 1take/);
   const o = await getJson(app.base, `/oembed?url=${encodeURIComponent(page)}`);
   assert.equal(o.type, 'link');
   assert.equal(o.author_url, `${app.base}/u/${u.id}`);

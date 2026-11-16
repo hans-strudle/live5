@@ -1,4 +1,4 @@
-// live5 feed: a full-screen vertical timeline of broadcasts, one per screen.
+// 1take feed: a full-screen vertical timeline of broadcasts, one per screen.
 // The card in view plays; its neighbours load ahead of time; far-away cards release their video.
 // Used by the home page (everyone) and profile pages (one user).
 

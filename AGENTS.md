@@ -1,8 +1,8 @@
-# live5 instructions
+# 1take instructions
 
 ## Product rules (do not weaken without the owner's say-so)
 
-- Positioning: one take. People "record" a take; it happens to be live (viewers can watch as it's recorded), but live is not the selling point (owner decision, 2026-11-15). User-facing words: the button is *Record*, a video is a "take", the recording screen shows REC, viewers see a quiet "Recording now" label (dark with a red dot, not a red LIVE badge), alerts say "X is recording right now". Don't bring back "live", "go live" or "on air" in user-facing text. Still say plainly (welcome popup) that people can watch while you record. Code, API and data keep the old names (`status: 'live'`, "broadcast", `LIVE5_*`), and the product is still called live5. The rules below use those internal words.
+- Positioning: one take. People "record" a take; it happens to be live (viewers can watch as it's recorded), but live is not the selling point (owner decision, 2026-11-15). User-facing words: the button is *Record*, a video is a "take", the recording screen shows REC, viewers see a quiet "Recording now" label (dark with a red dot, not a red LIVE badge), alerts say "X is recording right now". Don't bring back "live", "go live" or "on air" in user-facing text. Still say plainly (welcome popup) that people can watch while you record. Code, API and data keep the old names (`status: 'live'`, "broadcast", `LIVE5_*`), and the product is called 1take (renamed from live5, owner decision, 2026-11-15); storage keys (`live5:*`), `LIVE5_*` settings, the repo folder and the deploy files (`/opt/live5`, `live5.service`) keep the old name. The rules below use those internal words.
 - The only way to create video is a live camera broadcast. No file upload, import, or paste path — in the UI or the API.
 - Recording is live and immediate. No preview/review/publish step between pressing *Record* and viewers seeing it.
 - Broadcasts are short and hard-capped server-side (time and bytes), not just in the client. Current cap: 30 seconds per stream (owner decision, 2026-11-13; previously 5 s).
@@ -14,14 +14,14 @@
 - No separate watch page: a shared link (`/watch/<id>`) serves the main feed with that broadcast first, then the rest of the feed auto-plays (owner decision, 2026-11-14). The server still fills in that link's preview tags.
 - The only non-video file the server accepts is the preview JPEG. It's grabbed from the live camera by `/go`, and the server accepts it only with the broadcast token, only while live, only once, up to 300 KB. It's a cover image, not an upload feature: there is no image picker.
 - Daily limit: each user can go live once per rolling 12 hours (default `maxPerDay` 1 per `limitHours` 12; was 5 per 24 hours), enforced server-side; the Record button shows a lock with a "Next take in…" countdown until then (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
-- First visit shows a welcome popup explaining the rules (`public/welcome.js`, once per device).
+- First visit shows a popup explaining the rules (`public/welcome.js`, once per device). A "?" help button in every page's top bar (any element with `data-help`) opens it again at any time; it is hidden while recording (owner request, 2026-11-15).
 - Comments are simple: plain text, one line, at most 200 characters, append-only (no editing or deleting), one every 3 seconds per user, tied to the user's UUID like broadcasts (owner request, 2026-11-14).
 - Likes are private: anyone can like (anonymous per-device viewer id, no name needed), but like counts are never shown to viewers or broadcasters and never returned by the API (owner request, 2026-11-14).
 - Starting a take is announced: an in-feed banner ("X is recording", 5-second checks) and opt-in Web Push "X is recording right now" notifications to all subscribed devices except the broadcaster's own (owner request, 2026-11-14). There's no following yet, so alerts cover everyone.
 - Web Push stays dependency-free (`push.mjs`): only send to known push-service hosts (prevents the server being used to POST to arbitrary URLs).
 - No editing: no trimming, replacing, deleting or reordering chunks; chunks are accepted only in sequence, only while live, only with the broadcast token.
 
-- Web-only for now: no native, TestFlight or App Store app. iPhone users add live5 to the Home Screen, which also enables alerts (owner decision, 2026-11-14). A public App Store release would first need reporting, blocking and content filtering (Apple guideline 1.2).
+- Web-only for now: no native, TestFlight or App Store app. iPhone users add 1take to the Home Screen, which also enables alerts (owner decision, 2026-11-14). A public App Store release would first need reporting, blocking and content filtering (Apple guideline 1.2).
 
 ## Engineering
 

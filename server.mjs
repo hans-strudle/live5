@@ -458,7 +458,7 @@ export function createApp({
 
   // Everything a preview needs, for the home page, a broadcast or a profile.
   async function preview(kind, id) {
-    let info = { title: 'live5', description: SITE_DESCRIPTION, path: '/', image: null, type: 'website' };
+    let info = { title: '1take', description: SITE_DESCRIPTION, path: '/', image: null, type: 'website' };
     if (kind === 'watch') {
       const s = streams.get(id);
       const u = s && users.get(s.userId);
@@ -467,7 +467,7 @@ export function createApp({
         const secs = s.endedAt ? Math.max(1, Math.round((s.endedAt - s.startedAt) / 1000)) : null;
         const day = new Date(s.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
         info = {
-          title: s.status === 'live' ? `${name} is recording on live5` : `${name} on live5`,
+          title: s.status === 'live' ? `${name} is recording on 1take` : `${name} on 1take`,
           description: s.status === 'live' ? 'Recording right now. Watch the take as it happens.' : `A ${secs ? `${secs}-second ` : ''}take from ${day}.`,
           path: `/watch/${s.id}`, image: s.hasPoster ? s : null, type: 'video.other',
           author: u && { name, path: `/u/${u.id}` },
@@ -478,8 +478,8 @@ export function createApp({
       if (u) {
         const count = [...streams.values()].filter((s) => s.userId === u.id && !s.empty).length;
         info = {
-          title: `${u.name} on live5`,
-          description: `${count} ${count === 1 ? 'take' : 'takes'} on live5. ${SITE_DESCRIPTION}`,
+          title: `${u.name} on 1take`,
+          description: `${count} ${count === 1 ? 'take' : 'takes'} on 1take. ${SITE_DESCRIPTION}`,
           path: `/u/${u.id}`, image: latestWithPoster((s) => s.userId === u.id), type: 'profile',
           author: { name: u.name, path: `/u/${u.id}` },
         };
@@ -497,7 +497,7 @@ export function createApp({
     const pageUrl = base + p.path;
     const size = p.image ? await posterSize(p.image) : null;
     const tags = [
-      ['property', 'og:site_name', 'live5'],
+      ['property', 'og:site_name', '1take'],
       ['property', 'og:type', p.type],
       ['property', 'og:title', p.title],
       ['property', 'og:description', p.description],
@@ -535,7 +535,7 @@ export function createApp({
     const p = await preview(kind, id);
     if (p.path === '/') return json(res, 404, { error: 'unknown url' });
     const base = publicOrigin(req);
-    const body = { version: '1.0', type: 'link', title: p.title, provider_name: 'live5', provider_url: `${base}/` };
+    const body = { version: '1.0', type: 'link', title: p.title, provider_name: '1take', provider_url: `${base}/` };
     if (p.author) Object.assign(body, { author_name: p.author.name, author_url: base + p.author.path });
     const size = p.image ? await posterSize(p.image) : null;
     if (p.image && size) {
@@ -867,7 +867,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     });
   }
   app.server.listen(port, host, () => {
-    console.log(`live5 on ${scheme}://localhost:${port}`);
+    console.log(`1take on ${scheme}://localhost:${port}`);
     for (const list of Object.values(networkInterfaces())) {
       for (const a of list ?? []) {
         if (a.family === 'IPv4' && !a.internal) console.log(`  on your network: ${scheme}://${a.address}:${port}`);
