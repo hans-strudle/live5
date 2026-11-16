@@ -133,7 +133,8 @@ function el(tag, cls, text) {
 }
 
 // first: a broadcast id to show before everything else (a shared link), then the feed as usual.
-export function createFeed(root, { user = null, first = null, emptyTitle = 'Nothing here yet', emptyText = '' } = {}) {
+// challenge: only the takes recorded for that challenge (a challenge's own page).
+export function createFeed(root, { user = null, challenge = null, first = null, emptyTitle = 'Nothing here yet', emptyText = '' } = {}) {
   const cards = [];
   const known = new Set();
   let next = 0, loading = false, active = -1;
@@ -150,6 +151,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
   const query = (extra) => {
     const p = new URLSearchParams(extra);
     if (user) p.set('user', user);
+    if (challenge) p.set('challenge', challenge);
     return `/api/streams?${p}`;
   };
 
@@ -174,6 +176,12 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     who.append(avatarNode(s.avatar, s.name, 'avatar sm'), el('span', 'card-name', s.name));
     const meta = el('div', 'card-meta');
     info.append(who, meta);
+    // A take recorded for a challenge links to that challenge (not on the challenge's own page).
+    if (s.challenge && !challenge) {
+      const chip = el('a', 'card-challenge', `Challenge · ${s.challenge.title}`);
+      chip.href = `/c/${encodeURIComponent(s.challenge.id)}`;
+      info.append(chip);
+    }
 
     const audible = soundOn && !soundBlocked;
     const sound = el('button', 'sound');

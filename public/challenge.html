@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Challenge · 1take</title>
+  <!--META-->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="1take">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/welcome.js"></script>
+</head>
+<body class="feed-page">
+  <header class="float-header">
+    <a class="logo" href="/">1take</a>
+    <nav><button class="help-btn" type="button" data-help hidden aria-label="How 1take works" title="How 1take works"></button><button class="bell" id="bell" type="button" hidden></button><a class="btn live" href="/go">Record</a></nav>
+  </header>
+  <main class="feed" id="feed">
+    <!-- Challenge heading at the top of the page; it scrolls away with the feed, and the takes
+         recorded for this challenge follow straight after it. -->
+    <section class="profile-head challenge-head">
+      <div class="profile-text">
+        <span class="chip">Challenge</span>
+        <h1 id="title">&nbsp;</h1>
+        <p class="challenge-prompt" id="prompt"></p>
+        <p id="meta"></p>
+        <div class="challenge-actions" id="actions" hidden>
+          <a class="btn live" id="enter" href="/go" hidden>Record your take</a>
+          <button class="btn ghost" id="share" type="button">Share</button>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script type="module">
+    import { createFeed } from '/feed.js';
+    import { setupBell } from '/notify.js';
+    import { shareLink } from '/share.js';
+    import { timeLeft } from '/challenge.js';
+    import { getUser, authHeaders } from '/me.js';
+    setupBell(document.getElementById('bell'));
+    const $ = (x) => document.getElementById(x);
+    const id = decodeURIComponent(location.pathname.split('/').pop());
+
+    const r = await fetch(`/api/challenges/${encodeURIComponent(id)}`).catch(() => null);
+    if (!r || !r.ok) {
+      $('title').textContent = 'Challenge not found';
+      $('meta').textContent = r && r.status === 404 ? 'This challenge does not exist, or has not started yet.' : 'Could not load this challenge.';
+    } else {
+      const c = await r.json();
+      document.title = `${c.title} · 1take challenge`;
+      $('title').textContent = c.title;
+      $('prompt').textContent = c.prompt;
+      const takes = `${c.takes} ${c.takes === 1 ? 'take' : 'takes'}`;
+      let entered = false; // this device's user already has a take for it
+      const showMeta = () => {
+        const open = Date.now() < c.endsAt;
+        $('meta').textContent = open
+          ? `${timeLeft(c.endsAt - Date.now())} left · ${takes}${entered ? ' · yours is in' : ''}`
+          : `Ended ${new Date(c.endsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${takes}`;
+        $('enter').hidden = !open || entered;
+      };
+      showMeta();
+      // Only offer "Record your take" to someone who hasn't recorded one for it yet.
+      const me = getUser();
+      if (me && c.open) {
+        fetch('/api/users/me', { headers: authHeaders(me) }).then((r) => (r.ok ? r.json() : null)).then((u) => {
+          entered = !!(u && u.openChallenge && u.openChallenge.id === c.id && u.openChallenge.done);
+          showMeta();
+        }).catch(() => {});
+      }
+      setInterval(showMeta, 30000);
+      $('share').onclick = () => shareLink(`${c.title} · 1take challenge`, location.origin + location.pathname);
+      $('actions').hidden = false;
+      const open = Date.now() < c.endsAt;
+      createFeed($('feed'), {
+        challenge: c.id,
+        emptyTitle: 'No takes yet',
+        emptyText: open ? 'Nobody has taken this one on so far. You could be first.' : 'Nobody recorded a take for this one.',
+      });
+    }
+  </script>
+</body>
+</html>

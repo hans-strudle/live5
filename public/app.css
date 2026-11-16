@@ -68,6 +68,11 @@ button { -webkit-tap-highlight-color: transparent; }
 .card-who { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; max-width: 100%; }
 .card-name { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; text-shadow: var(--over-video); }
 .card-who:hover .card-name { text-decoration: underline; }
+/* A take recorded for a challenge: a small label linking to that challenge's page. */
+.card-challenge { pointer-events: auto; display: inline-block; max-width: 100%; margin: 8px 0 0 46px; padding: 3px 8px;
+  border-radius: 3px; background: rgba(0,0,0,.5); box-shadow: inset 0 0 0 1px rgba(255,255,255,.28); color: #fff;
+  font: 700 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
 .card-meta { margin: 2px 0 0 46px; font: 12px/1.4 var(--mono); color: rgba(255,255,255,.8); text-shadow: var(--over-video); }
 
 /* The right-hand column on a card, bottom to top: sound, comments, share, like. Bare icons. */
@@ -122,7 +127,19 @@ button { -webkit-tap-highlight-color: transparent; }
   background: none; color: rgba(255,255,255,.75); cursor: pointer; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
 .bell.on { color: #fff; }
 
-/* "Sam is live · Watch" over the feed. */
+/* The challenge strip under the home page's header: what's open and the time left. While it
+   shows, the things that sit just under the header move down to make room. */
+.challenge-strip { position: fixed; z-index: 10; top: calc(58px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  max-width: calc(100vw - 24px); display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  background: rgba(0,0,0,.6); box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); color: #fff; text-decoration: none;
+  font-size: 13px; white-space: nowrap; }
+.strip-label { font: 700 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.7); }
+.strip-title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.strip-time { font: 12px/1.4 var(--mono); color: rgba(255,255,255,.75); }
+.has-strip .card-top { top: calc(100px + env(safe-area-inset-top)); }
+.has-strip .live-banner { top: calc(98px + env(safe-area-inset-top)); }
+
+/* "Sam is recording · Watch" over the feed. */
 .live-banner { position: fixed; z-index: 12; top: calc(60px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
   width: min(calc(100vw - 24px), 400px); display: flex; align-items: center; gap: 10px; padding: 8px 6px 8px 10px;
   border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.45);
@@ -180,6 +197,11 @@ button { -webkit-tap-highlight-color: transparent; }
 .profile-text { min-width: 0; flex: 1; }
 .profile-head h1 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
 .profile-head p { margin: 4px 0 0; font: 12px/1.4 var(--mono); color: var(--muted); }
+/* A challenge's page uses the same heading: label, title, the prompt, time left, and its buttons. */
+.challenge-head .chip { margin: 0 0 8px; }
+.profile-head .challenge-prompt { margin-top: 6px; font: inherit; font-size: 16px; line-height: 1.4; color: var(--fg); }
+.challenge-actions { display: flex; gap: 10px; margin-top: 14px; }
+.challenge-actions .btn { padding: 9px 16px; font-size: 15px; }
 .chip { display: inline-block; margin-top: 8px; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--line);
   color: var(--muted); font: 700 10px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
@@ -230,6 +252,15 @@ button { -webkit-tap-highlight-color: transparent; }
   text-align: center; padding: 48px 16px calc(20px + env(safe-area-inset-bottom));
   background: linear-gradient(transparent, rgba(0,0,0,.75)); }
 .studio-bottom p { margin: 0; text-shadow: var(--over-video); }
+/* The open challenge's prompt, and the switch between a challenge take and a free take. */
+.take-prompt { max-width: 34ch; font-size: 15px; line-height: 1.35; color: #fff; }
+.take-prompt strong { display: block; font: 700 11px/1.6 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: rgba(255,255,255,.75); }
+.mode { display: flex; padding: 3px; border-radius: 999px; background: rgba(0,0,0,.55); box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+.mode button { border: 0; border-radius: 999px; padding: 7px 14px; background: none; color: rgba(255,255,255,.75);
+  font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.mode button[aria-pressed="true"] { background: var(--fg); color: var(--ink); }
+.mode button[disabled] { opacity: .55; cursor: default; }
 .as { font-size: 14px; color: rgba(255,255,255,.9); }
 .as a { color: rgba(255,255,255,.7); }
 .quota { font-size: 13px; color: rgba(255,255,255,.75); }

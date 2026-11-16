@@ -17,6 +17,7 @@ dialog.innerHTML = `
     <li><div><strong>It stops at <span data-seconds>30</span> seconds.</strong> You can end it sooner.</div></li>
     <li><div><strong>What you record is what stays.</strong> Nothing can be uploaded, edited or deleted.</div></li>
     <li><div><strong data-per-day>One take every 12 hours.</strong> Make it count.</div></li>
+    <li><div><strong>Challenges get their own take.</strong> When one is open, you get one extra take for it.</div></li>
   </ol>
   <button class="btn welcome-ok" type="button">Got it</button>`;
 dialog.querySelector('.welcome-close').append(icon('close', 18));

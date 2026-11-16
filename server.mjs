@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSy
 import { networkInterfaces } from 'node:os';
 import { isFragmentedMp4, defragmentMp4 } from './mp4.mjs';
 import { loadVapid, cleanSubscription, sendPush } from './push.mjs';
+import { loadChallenges, currentChallenge, nextChallenge } from './challenges.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -31,8 +32,9 @@ const clampInt = (v, min, max, fallback) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
 // /watch/:streamId (a shared link: the main feed, starting with that broadcast) and /u/:userId
-// (a profile) are pages that load their data from the API.
-const PAGES = { watch: 'index.html', u: 'profile.html' };
+// (a profile) and /c/:challengeId (a challenge's takes) are pages that load their data from the API.
+const PAGES = { watch: 'index.html', u: 'profile.html', c: 'challenge.html' };
+const ANNOUNCE_LATE_MS = 60 * 60 * 1000; // a challenge's alert isn't sent more than an hour late
 
 // No logins. Each device gets a user: a public UUID (used in profile links and to tie
 // broadcasts to the person) plus a private key the device keeps to act as that user.
@@ -90,6 +92,7 @@ export function createApp({
   limitHours = Number(process.env.LIVE5_LIMIT_HOURS) || 12, // the rolling window: one live every 12 hours
   finalPieceGrace = FINAL_PIECE_GRACE,
   dataDir = process.env.LIVE5_DATA_DIR || path.join(ROOT, 'data'),
+  challenges = [], // from challenges.mjs: [{ id, title, prompt, startsAt, endsAt }], oldest first
   tls = null,
 } = {}) {
   // ---- storage: data/users.json, data/streams/<id>.json (details) + <id>.<ext> (video) ----
@@ -142,25 +145,84 @@ export function createApp({
 
   // "Sam is recording right now": to every subscribed device except the broadcaster's own, a few at a
   // time. Subscriptions the push service says are gone (404/410) are forgotten.
-  async function notifyLive(s) {
-    const u = users.get(s.userId);
-    const data = {
-      title: `${u?.name ?? 'Someone'} is recording right now`,
-      body: `One take, up to ${maxSeconds} seconds.`,
-      url: `/watch/${s.id}`,
-      icon: avatarOf(s.userId),
-      tag: `live-${s.id}`,
-    };
-    const targets = [...pushSubs.values()].filter((sub) => sub.userId !== s.userId);
+  async function pushAll(data, ttlSeconds, exceptUserId = null) {
+    const targets = [...pushSubs.values()].filter((sub) => !exceptUserId || sub.userId !== exceptUserId);
     let removed = false;
     for (let i = 0; i < targets.length; i += 10) {
       await Promise.all(targets.slice(i, i + 10).map(async (sub) => {
-        const status = await sendPush(sub, data, vapid, vapidSubject, maxSeconds + 30);
+        const status = await sendPush(sub, data, vapid, vapidSubject, ttlSeconds);
         if (status === 404 || status === 410) { pushSubs.delete(sub.endpoint); removed = true; }
         else if (status >= 400) console.error(`push to ${new URL(sub.endpoint).host} failed: ${status}`);
       }));
     }
     if (removed) savePushSubs();
+  }
+  function notifyLive(s) {
+    const u = users.get(s.userId);
+    const c = challengeOf(s);
+    return pushAll({
+      title: `${u?.name ?? 'Someone'} is recording right now`,
+      body: c ? `For the challenge: ${c.title}` : `One take, up to ${maxSeconds} seconds.`,
+      url: `/watch/${s.id}`,
+      icon: avatarOf(s.userId),
+      tag: `live-${s.id}`,
+    }, maxSeconds + 30, s.userId);
+  }
+
+  // ---- challenges: a prompt open for a set window; one extra take per person per challenge ----
+  // The list comes from challenges.json (see challenges.mjs). A challenge that hasn't started is
+  // secret: nothing here returns its title or prompt, and its id answers "not found".
+  const challengeById = new Map(challenges.map((c) => [c.id, c]));
+  const openChallenge = (now = Date.now()) => currentChallenge(challenges, now);
+  const startedChallenge = (id, now = Date.now()) => {
+    const c = challengeById.get(String(id ?? ''));
+    return c && c.startsAt <= now ? c : null;
+  };
+  const challengeOf = (s) => (s.challengeId ? challengeById.get(s.challengeId) ?? null : null);
+  const shown = (s) => s.status === 'live' || (s.bytes > 0 && !s.empty); // what the feed lists
+  function publicChallenge(c, now = Date.now()) {
+    let takes = 0;
+    for (const s of streams.values()) if (s.challengeId === c.id && shown(s)) takes++;
+    return { id: c.id, title: c.title, prompt: c.prompt, startsAt: c.startsAt, endsAt: c.endsAt, open: now < c.endsAt, takes };
+  }
+  // The open challenge as one person sees it: done once they have a take for it (empty ones don't count).
+  function challengeFor(u) {
+    const c = openChallenge();
+    if (!c) return null;
+    let done = false;
+    for (const s of streams.values()) if (s.userId === u.id && s.challengeId === c.id && !s.empty) { done = true; break; }
+    return { id: c.id, title: c.title, prompt: c.prompt, endsAt: c.endsAt, done };
+  }
+
+  // "New challenge: The Tour" to every subscribed device when a challenge opens. The ids already
+  // announced are kept in data/challenges-state.json, so a restart never sends one twice; one
+  // that opened while the server was down for over an hour is skipped rather than sent late.
+  const stateFile = path.join(dataDir, 'challenges-state.json');
+  const announced = new Set(readJson(stateFile, {}).announced ?? []);
+  let stateWrite = Promise.resolve(), announceTimer = null;
+  function announceDue() {
+    const now = Date.now();
+    const c = openChallenge(now);
+    if (c && !announced.has(c.id)) {
+      announced.add(c.id);
+      const snapshot = JSON.stringify({ announced: [...announced] }, null, 2);
+      stateWrite = stateWrite.then(async () => { // write a copy, then swap it in (like users.json)
+        await writeFile(`${stateFile}.tmp`, snapshot);
+        await rename(`${stateFile}.tmp`, stateFile);
+      }).catch((e) => console.error('saving challenge state failed', e));
+      if (now - c.startsAt <= ANNOUNCE_LATE_MS) {
+        pushAll({
+          title: `New challenge: ${c.title}`, body: c.prompt, url: `/c/${c.id}`, icon: null, tag: `challenge-${c.id}`,
+        }, Math.max(60, Math.min(24 * 3600, Math.round((c.endsAt - now) / 1000))))
+          .catch((e) => console.error('sending challenge notifications failed', e));
+      }
+    }
+    // Look again when the next one opens (in steps of at most an hour: long timers overflow).
+    const next = nextChallenge(challenges, now);
+    if (next) {
+      announceTimer = setTimeout(announceDue, Math.min(next.startsAt - now, ANNOUNCE_LATE_MS / 2) + 20);
+      announceTimer.unref();
+    }
   }
 
   let usersWrite = Promise.resolve();
@@ -183,6 +245,7 @@ export function createApp({
       startedAt: s.startedAt, endedAt: s.endedAt ?? null, endReason: s.endReason ?? null, bytes: s.bytes,
       hasPoster: !!s.hasPoster, replay: s.replay ?? null, empty: !!s.empty, commentCount: s.commentCount ?? 0,
       likeCount: s.likeCount ?? 0, // kept for later; never sent to viewers or the broadcaster
+      challengeId: s.challengeId ?? null, // the challenge this take was recorded for, if any
     };
     s.saving = (s.saving ?? Promise.resolve())
       .then(() => writeFile(path.join(streamDir, `${s.id}.json`), JSON.stringify(meta, null, 2)))
@@ -252,6 +315,7 @@ export function createApp({
   }
 
   function publicStream(s) {
+    const c = challengeOf(s);
     return {
       id: s.id,
       userId: s.userId,
@@ -267,6 +331,7 @@ export function createApp({
       commentCount: s.commentCount ?? 0,
       maxSeconds,
       viewers: s.viewers.size,
+      challenge: c ? { id: c.id, title: c.title } : null,
     };
   }
 
@@ -320,10 +385,11 @@ export function createApp({
   // Live limit: at most maxPerDay lives started in any rolling window of limitHours (default:
   // one live every 12 hours). Lives that recorded no video don't count. nextAt is when the oldest
   // counted live drops out of the window. (Field names say "day"/"today" for history.)
+  // Challenge takes are extra: they don't count here (one per challenge is checked separately).
   const WINDOW_MS = limitHours * 60 * 60 * 1000;
   function dailyUsage(u, now = Date.now()) {
     const recent = [...streams.values()]
-      .filter((s) => s.userId === u.id && !s.empty && s.startedAt > now - WINDOW_MS)
+      .filter((s) => s.userId === u.id && !s.empty && !s.challengeId && s.startedAt > now - WINDOW_MS)
       .map((s) => s.startedAt)
       .sort((a, b) => a - b);
     const leftToday = Math.max(0, maxPerDay - recent.length);
@@ -336,7 +402,8 @@ export function createApp({
     };
   }
   // What a user sees about themselves (never shown on public profiles).
-  const selfView = (u) => ({ ...publicUser(u), ...dailyUsage(u) });
+  const usageOf = (u) => ({ ...dailyUsage(u), openChallenge: challengeFor(u) });
+  const selfView = (u) => ({ ...publicUser(u), ...usageOf(u) });
 
   // ---- http helpers ----
   function json(res, code, body) {
@@ -423,6 +490,16 @@ export function createApp({
       if (body && pushSubs.delete(String(body.endpoint ?? ''))) await savePushSubs();
       return json(res, 200, { ok: true });
     }
+    // GET /api/challenges/current — the open challenge (or null) and when the next one opens
+    // (the time only). GET /api/challenges/:id — one challenge, once it has started.
+    if (parts[0] === 'api' && parts[1] === 'challenges' && parts.length === 3 && req.method === 'GET') {
+      if (parts[2] === 'current') {
+        const c = openChallenge(), next = nextChallenge(challenges);
+        return json(res, 200, { current: c ? publicChallenge(c) : null, next: next ? { startsAt: next.startsAt } : null });
+      }
+      const c = startedChallenge(parts[2]);
+      return c ? json(res, 200, publicChallenge(c)) : json(res, 404, { error: 'no such challenge' });
+    }
     if (parts[0] === 'api' && parts[1] === 'users') return handleUsers(req, res, parts);
     if (parts[0] === 'api' && parts[1] === 'streams') return handleStreams(req, res, url, parts);
     return json(res, 404, { error: 'not found' });
@@ -466,9 +543,11 @@ export function createApp({
         const name = u?.name ?? 'Someone';
         const secs = s.endedAt ? Math.max(1, Math.round((s.endedAt - s.startedAt) / 1000)) : null;
         const day = new Date(s.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+        const c = challengeOf(s);
+        const ended = c ? `A ${secs ? `${secs}-second ` : ''}take for the challenge “${c.title}”.` : `A ${secs ? `${secs}-second ` : ''}take from ${day}.`;
         info = {
           title: s.status === 'live' ? `${name} is recording on 1take` : `${name} on 1take`,
-          description: s.status === 'live' ? 'Recording right now. Watch the take as it happens.' : `A ${secs ? `${secs}-second ` : ''}take from ${day}.`,
+          description: s.status === 'live' ? 'Recording right now. Watch the take as it happens.' : ended,
           path: `/watch/${s.id}`, image: s.hasPoster ? s : null, type: 'video.other',
           author: u && { name, path: `/u/${u.id}` },
         };
@@ -482,6 +561,14 @@ export function createApp({
           description: `${count} ${count === 1 ? 'take' : 'takes'} on 1take. ${SITE_DESCRIPTION}`,
           path: `/u/${u.id}`, image: latestWithPoster((s) => s.userId === u.id), type: 'profile',
           author: { name: u.name, path: `/u/${u.id}` },
+        };
+      }
+    } else if (kind === 'c') {
+      const c = startedChallenge(id); // one that hasn't started gets the plain home preview
+      if (c) {
+        info = {
+          title: `${c.title} · 1take challenge`, description: c.prompt,
+          path: `/c/${c.id}`, image: latestWithPoster((s) => s.challengeId === c.id), type: 'website',
         };
       }
     } else {
@@ -516,11 +603,12 @@ export function createApp({
     }
     const meta = tags.map(([attr, key, value]) => `<meta ${attr}="${key}" content="${escapeHtml(value)}">`);
     meta.push(`<link rel="canonical" href="${escapeHtml(pageUrl)}">`);
-    if (kind === 'watch' || kind === 'u') {
+    const own = p.path !== '/'; // a take, profile or challenge that exists (not the home fallback)
+    if (own) {
       meta.push(`<link rel="alternate" type="application/json+oembed" href="${escapeHtml(`${base}/oembed?format=json&url=${encodeURIComponent(pageUrl)}`)}" title="${escapeHtml(p.title)}">`);
     }
     html = html.replace('<!--META-->', meta.join('\n  '));
-    if (kind === 'watch' || kind === 'u') html = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(p.title)}</title>`);
+    if (own) html = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(p.title)}</title>`);
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
     res.end(html);
   }
@@ -531,7 +619,7 @@ export function createApp({
     let target;
     try { target = new URL(url.searchParams.get('url') || ''); } catch { return json(res, 404, { error: 'unknown url' }); }
     const [kind, id, extra] = target.pathname.split('/').filter(Boolean);
-    if (!['watch', 'u'].includes(kind) || !id || extra) return json(res, 404, { error: 'unknown url' });
+    if (!['watch', 'u', 'c'].includes(kind) || !id || extra) return json(res, 404, { error: 'unknown url' });
     const p = await preview(kind, id);
     if (p.path === '/') return json(res, 404, { error: 'unknown url' });
     const base = publicOrigin(req);
@@ -606,13 +694,23 @@ export function createApp({
       for (const other of streams.values()) {
         if (other.userId === u.id && other.status === 'live') return json(res, 409, { error: 'you are already recording' });
       }
-      const usage = dailyUsage(u);
-      if (!usage.leftToday) {
-        const lives = maxPerDay === 1 ? 'your take' : `all ${maxPerDay} takes`;
-        return json(res, 429, { error: `you've had ${lives} for the last ${limitHours} hours`, ...usage });
+      // {challenge: id}: a take for the open challenge. One per person per challenge, on top of
+      // the regular limit. Otherwise a regular ("free") take, limited as always.
+      let challengeId = null;
+      if (body.challenge != null) {
+        const mine = challengeFor(u);
+        if (!mine || mine.id !== String(body.challenge)) return json(res, 409, { error: 'that challenge isn’t open', ...usageOf(u) });
+        if (mine.done) return json(res, 429, { error: 'you’ve had your take for this challenge', ...usageOf(u) });
+        challengeId = mine.id;
+      } else {
+        const usage = dailyUsage(u);
+        if (!usage.leftToday) {
+          const lives = maxPerDay === 1 ? 'your take' : `all ${maxPerDay} takes`;
+          return json(res, 429, { error: `you've had ${lives} for the last ${limitHours} hours`, ...usageOf(u) });
+        }
       }
       const s = {
-        id: randomBytes(6).toString('base64url'), userId: u.id, type, ext: EXT[base],
+        id: randomBytes(6).toString('base64url'), userId: u.id, type, ext: EXT[base], challengeId,
         status: 'live', startedAt: Date.now(), bytes: 0,
         token: randomBytes(24).toString('base64url'), chunks: [], nextSeq: 0, busy: false, viewers: new Set(),
       };
@@ -623,7 +721,7 @@ export function createApp({
       streams.set(s.id, s);
       await saveStream(s);
       notifyLive(s).catch((e) => console.error('sending live notifications failed', e)); // in the background
-      return json(res, 201, { ...publicStream(s), token: s.token, ...dailyUsage(u) });
+      return json(res, 201, { ...publicStream(s), token: s.token, ...usageOf(u) });
     }
 
     // GET /api/streams?user=<uuid>&status=live&offset=0&limit=10 — the feed: live first, then
@@ -633,9 +731,10 @@ export function createApp({
       const status = url.searchParams.get('status');
       const offset = clampInt(url.searchParams.get('offset'), 0, 1e6, 0);
       const limit = clampInt(url.searchParams.get('limit'), 1, 50, 10);
+      const challenge = url.searchParams.get('challenge'); // only that challenge's takes
       const all = [...streams.values()]
-        .filter((s) => (!user || s.userId === user) && (!status || s.status === status))
-        .filter((s) => s.status === 'live' || (s.bytes > 0 && !s.empty))
+        .filter((s) => (!user || s.userId === user) && (!status || s.status === status) && (!challenge || s.challengeId === challenge))
+        .filter(shown)
         .sort((a, b) => {
           const al = a.status === 'live', bl = b.status === 'live';
           return al !== bl ? (al ? -1 : 1) : b.startedAt - a.startedAt;
@@ -830,7 +929,11 @@ export function createApp({
     });
   };
   const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
-  server.on('close', () => { for (const s of streams.values()) endStream(s, 'shutdown'); });
+  server.on('close', () => {
+    clearTimeout(announceTimer);
+    for (const s of streams.values()) endStream(s, 'shutdown');
+  });
+  announceDue();
 
   // Stopping cleanly: end whatever is live, then wait until every recording, replay copy and
   // list has been written.
@@ -839,7 +942,7 @@ export function createApp({
     const all = [...streams.values()];
     await Promise.all(all.map((s) => s.finalizing));
     await Promise.all(all.flatMap((s) => [s.saving, s.commentWrite, s.likeWrite]));
-    await Promise.all([usersWrite, pushWrite]);
+    await Promise.all([usersWrite, pushWrite, stateWrite]);
   }
   return { server, streams, users, shutdown };
 }
@@ -854,7 +957,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const scheme = tls ? 'https' : 'http';
   // LIVE5_HOST=127.0.0.1 when a reverse proxy (e.g. Caddy on a server) is the only way in.
   const host = process.env.LIVE5_HOST || undefined;
-  const app = createApp({ tls });
+  // The challenge list: challenges.json next to this file, or wherever LIVE5_CHALLENGES_FILE says.
+  const challenges = loadChallenges(process.env.LIVE5_CHALLENGES_FILE || path.join(ROOT, 'challenges.json'));
+  const app = createApp({ tls, challenges });
   // Ctrl+C or a service restart: finish writing before exiting, so a live in progress keeps
   // its replay. A second signal exits straight away.
   let stopping = false;

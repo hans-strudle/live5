@@ -9,11 +9,18 @@
 - No logins. Each device gets a user with a public UUID and a private key (only the key's hash is stored server-side). Broadcasts are tied to the UUID, never to the display name. Names are free text: cleaned, at most 30 characters, changeable, not unique, and prove nothing about identity (owner decision, 2026-11-13).
 - Profiles (`/u/<uuid>`) list a user's broadcasts, live and past, after a short heading in the page flow: picture, name, details. It's not floating and not full-screen; the first video follows directly (owner decision, 2026-11-14).
 - Profile pictures are always the preview frame of the user's latest non-empty live; there's no picture picker.
-- Shared links must preview well: pages carry server-rendered Open Graph/Twitter tags (placeholder `<!--META-->` in each page's head), and `/oembed` answers for `/watch/:id` and `/u/:id`. Escape everything user-provided that goes into them.
+- Shared links must preview well: pages carry server-rendered Open Graph/Twitter tags (placeholder `<!--META-->` in each page's head), and `/oembed` answers for `/watch/:id`, `/u/:id` and `/c/:id`. Escape everything user-provided that goes into them.
 - The home page and profiles are a full-screen vertical feed, one broadcast per screen (`public/feed.js`).
 - No separate watch page: a shared link (`/watch/<id>`) serves the main feed with that broadcast first, then the rest of the feed auto-plays (owner decision, 2026-11-14). The server still fills in that link's preview tags.
 - The only non-video file the server accepts is the preview JPEG. It's grabbed from the live camera by `/go`, and the server accepts it only with the broadcast token, only while live, only once, up to 300 KB. It's a cover image, not an upload feature: there is no image picker.
-- Daily limit: each user can go live once per rolling 12 hours (default `maxPerDay` 1 per `limitHours` 12; was 5 per 24 hours), enforced server-side; the Record button shows a lock with a "Next take in…" countdown until then (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
+- Daily limit: each user can go live once per rolling 12 hours (default `maxPerDay` 1 per `limitHours` 12; was 5 per 24 hours), enforced server-side; the Record button shows a lock with a "Next take in…" countdown until then (owner decision, 2026-11-14). Lives marked `empty` don't count, and neither do challenge takes (see Challenges). The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
+- Challenges give people a reason to record (owner decisions, 2026-11-15). A challenge is a title and a prompt that is open for a set window; to start with, one per weekend, opening Friday 5pm US Pacific (one moment for everyone) and closing Sunday night. Rules:
+  - A challenge take is extra: one per person per challenge, on top of the regular limit, and it doesn't count toward that limit. Enforced server-side, per user like the regular limit. Empty takes don't count.
+  - Only the open challenge can be entered. The record page offers a Challenge / Free take switch while one is open.
+  - No winners, rankings or anything that reveals likes: a challenge has a gallery page (`/c/<id>`) and that's all.
+  - A challenge that hasn't started is secret: the API and pages never return its title or prompt, and its id answers 404.
+  - The list is `challenges.json` (hand-edited, explicit start/end per entry in the file's time zone, no overlaps; read by `challenges.mjs`). There is no admin screen. No list, or a broken one, means no challenges and the app works as before.
+  - When one opens, subscribed devices get one "New challenge: X" alert (remembered in `data/challenges-state.json`; never sent more than an hour late).
 - First visit shows a popup explaining the rules (`public/welcome.js`, once per device). A "?" help button in every page's top bar (any element with `data-help`) opens it again at any time; it is hidden while recording (owner request, 2026-11-15).
 - Comments are simple: plain text, one line, at most 200 characters, append-only (no editing or deleting), one every 3 seconds per user, tied to the user's UUID like broadcasts (owner request, 2026-11-14).
 - Likes are private: anyone can like (anonymous per-device viewer id, no name needed), but like counts are never shown to viewers or broadcasters and never returned by the API (owner request, 2026-11-14).
@@ -45,6 +52,7 @@
 ## Open questions
 
 - Should ended broadcasts remain as replays, or vanish when they end?
+- Challenges, not built yet: a reminder alert before one closes, an archive page of past challenges, more than one per weekend (the list already allows any window), and a way to write them without editing a file. Future prompts are readable in `challenges.json` by anyone who can see the repo.
 - Moderation, reporting and impersonation handling (anyone can type any name) before any public use. Comments have no moderation, deletion or daily cap yet.
 - Showing comments to the broadcaster while they're live (the Go live page doesn't show them yet).
 - Scaling: storage is local files in `data/`, served by a single process. Nothing is ever deleted (no retention limit).

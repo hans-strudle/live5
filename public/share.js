@@ -5,10 +5,13 @@ import { icon } from '/icons.js';
 
 export const streamUrl = (stream) => `${location.origin}/watch/${stream.id}`;
 
-export async function shareStream(stream) {
-  const url = streamUrl(stream);
+export function shareStream(stream) {
   const who = stream.name || 'Someone';
-  const title = stream.status === 'live' ? `${who} is recording on 1take` : `${who} on 1take`;
+  return shareLink(stream.status === 'live' ? `${who} is recording on 1take` : `${who} on 1take`, streamUrl(stream));
+}
+
+// Any page of the app (e.g. a challenge): share sheet, or copy the link.
+export async function shareLink(title, url) {
   if (navigator.share) {
     try {
       await navigator.share({ title, text: title, url });

@@ -23,11 +23,15 @@
       <a class="btn live" href="/go">Record</a>
     </nav>
   </header>
+  <!-- The open challenge and the time left (or when the next one opens); filled in by challenge.js. -->
+  <div id="strip" hidden></div>
   <main class="feed" id="feed" aria-label="Broadcasts"></main>
   <script type="module">
     import { createFeed } from '/feed.js';
     import { setupBell } from '/notify.js';
+    import { setupStrip } from '/challenge.js';
     setupBell(document.getElementById('bell'));
+    setupStrip(document.getElementById('strip'));
     try {
       const me = JSON.parse(localStorage.getItem('live5:user') || 'null');
       if (me && me.id) { const a = document.getElementById('me'); a.href = `/u/${me.id}`; a.hidden = false; }

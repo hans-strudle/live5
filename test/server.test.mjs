@@ -7,6 +7,9 @@ import { createDecipheriv, createECDH, hkdfSync, randomBytes } from 'node:crypto
 import { createApp, cleanName, cleanComment, jpegSize } from '../server.mjs';
 import { encryptPayload, cleanSubscription } from '../push.mjs';
 import { defragmentMp4, isFragmentedMp4 } from '../mp4.mjs';
+import { parseChallenges, loadChallenges, zonedTime } from '../challenges.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // ---------- helpers ----------
 // Every test gets its own server and a throwaway data folder (never the real data/).
@@ -37,8 +40,8 @@ async function newUser(base, name = 'Sam') {
   assert.equal(r.status, 201);
   return r.json();
 }
-async function goLive(base, u, type = 'video/webm') {
-  const r = await post(base, '/api/streams', { type }, auth(u));
+async function goLive(base, u, type = 'video/webm', extra = {}) {
+  const r = await post(base, '/api/streams', { type, ...extra }, auth(u));
   return { status: r.status, body: await r.json() };
 }
 const chunk = (base, s, seq, data, token = s.token) =>
@@ -422,4 +425,173 @@ test('a recording that claims billions of samples is refused, not processed', ()
   const started = Date.now();
   assert.equal(defragmentMp4(file), null);
   assert.ok(Date.now() - started < 2000);
+});
+
+// ---------- challenges ----------
+const HOUR = 3600 * 1000;
+const challengeNow = (o = {}) => ({
+  id: 'tour', title: 'The Tour', prompt: 'Show us where you are.', startsAt: Date.now() - HOUR, endsAt: Date.now() + HOUR, ...o,
+});
+async function record(base, u, extra) {
+  const live = await goLive(base, u, 'video/webm', extra);
+  if (live.status !== 201) return live;
+  await chunk(base, live.body, 0, 'x');
+  await end(base, live.body);
+  return live;
+}
+const me = async (base, u) => (await fetch(`${base}/api/users/me`, { headers: auth(u) })).json();
+
+test('a challenge take is extra: one per challenge, and it leaves the 12-hour limit alone', async (t) => {
+  const app = await start(t, { challenges: [challengeNow()] });
+  const u = await newUser(app.base);
+  assert.deepEqual((await me(app.base, u)).openChallenge.done, false);
+
+  const free = await record(app.base, u);
+  assert.equal(free.status, 201);
+  assert.equal(free.body.challenge, null);
+  assert.equal((await goLive(app.base, u)).status, 429, 'the regular take is used up');
+
+  const entry = await record(app.base, u, { challenge: 'tour' });
+  assert.equal(entry.status, 201, 'the challenge take is still available');
+  assert.deepEqual(entry.body.challenge, { id: 'tour', title: 'The Tour' });
+  assert.equal(entry.body.openChallenge.done, true);
+
+  const again = await goLive(app.base, u, 'video/webm', { challenge: 'tour' });
+  assert.equal(again.status, 429, 'one take per challenge');
+  assert.equal(again.body.openChallenge.done, true);
+
+  const mine = await me(app.base, u);
+  assert.equal(mine.usedToday, 1, 'the challenge take is not counted');
+  assert.ok(Math.abs(mine.nextAt - (free.body.startedAt + 12 * HOUR)) < 1000, 'and does not push the unlock time back');
+
+  // the other way round: a challenge take first leaves the regular take free
+  const v = await newUser(app.base, 'Vic');
+  assert.equal((await record(app.base, v, { challenge: 'tour' })).status, 201);
+  assert.equal((await me(app.base, v)).leftToday, 1);
+  assert.equal((await record(app.base, v)).status, 201);
+
+  const gallery = await getJson(app.base, '/api/streams?challenge=tour');
+  assert.equal(gallery.items.length, 2);
+  assert.ok(gallery.items.every((s) => s.challenge.id === 'tour'));
+  assert.equal((await getJson(app.base, '/api/streams')).items.length, 4);
+  const { current, next } = await getJson(app.base, '/api/challenges/current');
+  assert.equal(current.takes, 2);
+  assert.equal(current.open, true);
+  assert.equal(next, null);
+});
+
+test('a challenge take that recorded nothing can be tried again', async (t) => {
+  const app = await start(t, { challenges: [challengeNow()] });
+  const u = await newUser(app.base);
+  const { body: s } = await goLive(app.base, u, 'video/webm', { challenge: 'tour' });
+  await end(app.base, s);
+  await app.streams.get(s.id).finalizing;
+  assert.equal((await me(app.base, u)).openChallenge.done, false);
+  assert.equal((await goLive(app.base, u, 'video/webm', { challenge: 'tour' })).status, 201);
+});
+
+test('only the open challenge can be entered, and one that has not started stays secret', async (t) => {
+  const app = await start(t, { challenges: [
+    challengeNow({ id: 'old', title: 'Old One', startsAt: Date.now() - 3 * HOUR, endsAt: Date.now() - 2 * HOUR }),
+    challengeNow({ id: 'soon', title: 'Secret Title', prompt: 'Secret prompt', startsAt: Date.now() + HOUR, endsAt: Date.now() + 2 * HOUR }),
+  ] });
+  const u = await newUser(app.base);
+  for (const id of ['old', 'soon', 'nope']) {
+    assert.equal((await goLive(app.base, u, 'video/webm', { challenge: id })).status, 409, id);
+  }
+  assert.equal((await me(app.base, u)).openChallenge, null);
+  assert.equal((await goLive(app.base, u)).status, 201, 'a regular take still works');
+
+  const old = await getJson(app.base, '/api/challenges/old');
+  assert.equal(old.title, 'Old One');
+  assert.equal(old.open, false);
+  assert.equal((await fetch(`${app.base}/api/challenges/soon`)).status, 404);
+  assert.equal((await fetch(`${app.base}/oembed?url=${encodeURIComponent(`${app.base}/c/soon`)}`)).status, 404);
+  const answers = await Promise.all(['/api/challenges/current', '/c/soon', '/api/streams', '/api/config', '/']
+    .map(async (p) => (await fetch(app.base + p)).text()));
+  assert.ok(answers.every((text) => !text.includes('Secret')), 'nothing gives away the title or prompt');
+  const { current, next } = JSON.parse(answers[0]);
+  assert.equal(current, null);
+  assert.ok(next.startsAt > Date.now());
+});
+
+test('a challenge page has its own link preview, with the text escaped', async (t) => {
+  const app = await start(t, { challenges: [challengeNow({ title: '<b>"Tour"</b>', prompt: 'Show <i>us</i>' })] });
+  const page = `${app.base}/c/tour`;
+  const html = await (await fetch(page)).text();
+  assert.ok(html.includes('&lt;b&gt;&quot;Tour&quot;&lt;/b&gt; · 1take challenge'));
+  assert.ok(html.includes('content="Show &lt;i&gt;us&lt;/i&gt;"'));
+  assert.ok(!html.includes('<b>"Tour"</b>') && !html.includes('<i>us</i>'));
+  const o = await getJson(app.base, `/oembed?url=${encodeURIComponent(page)}`);
+  assert.equal(o.title, '<b>"Tour"</b> · 1take challenge');
+  // a take recorded for it says so in its own preview
+  const u = await newUser(app.base);
+  const { body: s } = await record(app.base, u, { challenge: 'tour' });
+  assert.match(await (await fetch(`${app.base}/watch/${s.id}`)).text(), /take for the challenge/);
+});
+
+test('a challenge is announced once when it opens, and that is remembered across restarts', async (t) => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'live5-test-'));
+  const challenges = [challengeNow({ startsAt: Date.now() + 150 })];
+  const stateFile = path.join(dataDir, 'challenges-state.json');
+  const first = await start(t, { dataDir, challenges });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.throws(() => readFileSync(stateFile), 'nothing announced before it opens');
+  await new Promise((r) => setTimeout(r, 400));
+  assert.deepEqual(JSON.parse(readFileSync(stateFile, 'utf8')).announced, ['tour']);
+  await first.shutdown();
+
+  // Restart while it's still open: it was already announced, so nothing is sent or rewritten
+  // (a re-announcement would rewrite the file and drop the marker added here).
+  writeFileSync(stateFile, JSON.stringify({ announced: ['tour'], marker: true }));
+  const second = await start(t, { dataDir, challenges });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(JSON.parse(readFileSync(stateFile, 'utf8')).marker, true, 'not announced again after a restart');
+  await second.shutdown();
+
+  // Without the record, a restart soon after it opened would announce it (and write the record).
+  writeFileSync(stateFile, '{}');
+  const third = await start(t, { dataDir, challenges });
+  await third.shutdown();
+  assert.deepEqual(JSON.parse(readFileSync(stateFile, 'utf8')).announced, ['tour']);
+});
+
+test('challenge times are read in the list’s time zone; bad lists are refused', () => {
+  const tz = 'America/Los_Angeles';
+  assert.equal(zonedTime('2026-11-20 17:00', tz), Date.UTC(2026, 10, 21, 1, 0), 'winter: 8 hours behind UTC');
+  assert.equal(zonedTime('2026-07-03 17:00', tz), Date.UTC(2026, 6, 4, 0, 0), 'summer: 7 hours behind UTC');
+  assert.equal(zonedTime('2026-11-20 17:00', 'UTC'), Date.UTC(2026, 10, 20, 17, 0));
+  for (const bad of ['2026-02-30 17:00', '2026-13-04 17:00', '2026-00-10 17:00', '2026-11-20 24:00', '2026-11-20 17:60', 'friday']) {
+    assert.throws(() => zonedTime(bad, tz), undefined, bad);
+  }
+
+  const entry = (o = {}) => ({ id: 'a', starts: '2026-11-20 17:00', ends: '2026-11-22 23:59', title: 'T', prompt: 'P', ...o });
+  const [c] = parseChallenges({ timezone: tz, challenges: [entry()] });
+  assert.equal(c.startsAt, Date.UTC(2026, 10, 21, 1, 0));
+  assert.equal(c.endsAt, Date.UTC(2026, 10, 23, 7, 59));
+  const sorted = parseChallenges({ challenges: [entry({ id: 'b', starts: '2026-11-27 17:00', ends: '2026-11-29 23:59' }), entry()] });
+  assert.deepEqual(sorted.map((x) => x.id), ['a', 'b'], 'oldest first');
+  for (const bad of [
+    [entry(), entry({ id: 'b', starts: '2026-11-21 10:00' })], // overlap
+    [entry(), entry()], // same id twice
+    [entry({ id: 'current' })], [entry({ id: 'a/b' })],
+    [entry({ title: '' })], [entry({ prompt: 'x'.repeat(141) })],
+    [entry({ ends: '2026-11-20 16:00' })],
+  ]) assert.throws(() => parseChallenges({ challenges: bad }));
+  assert.throws(() => parseChallenges({ challenges: [entry(), null] }), /challenge 2: expected/, 'a stray entry is named');
+  assert.throws(() => parseChallenges({ timezone: 'Mars/Phobos', challenges: [] }));
+  assert.throws(() => parseChallenges({}));
+});
+
+test('a missing or broken challenge file means no challenges; the real one is valid', (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'live5-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.deepEqual(loadChallenges(path.join(dir, 'none.json')), []);
+  writeFileSync(path.join(dir, 'bad.json'), '{ "challenges": [ { "id": "x" } ] }');
+  const errors = t.mock.method(console, 'error', () => {});
+  assert.deepEqual(loadChallenges(path.join(dir, 'bad.json')), []);
+  assert.equal(errors.mock.callCount(), 1, 'and it says why');
+  errors.mock.restore();
+  const real = loadChallenges(fileURLToPath(new URL('../challenges.json', import.meta.url)));
+  assert.ok(real.length > 0, 'challenges.json in the repo loads');
 });
