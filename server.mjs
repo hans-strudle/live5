@@ -140,13 +140,13 @@ export function createApp({
     return pushWrite;
   }
 
-  // "Sam just went live": to every subscribed device except the broadcaster's own, a few at a
+  // "Sam is recording right now": to every subscribed device except the broadcaster's own, a few at a
   // time. Subscriptions the push service says are gone (404/410) are forgotten.
   async function notifyLive(s) {
     const u = users.get(s.userId);
     const data = {
-      title: `${u?.name ?? 'Someone'} just went live`,
-      body: `Live for the next ${maxSeconds} seconds.`,
+      title: `${u?.name ?? 'Someone'} is recording right now`,
+      body: `One take, up to ${maxSeconds} seconds.`,
       url: `/watch/${s.id}`,
       icon: avatarOf(s.userId),
       tag: `live-${s.id}`,
@@ -442,7 +442,7 @@ export function createApp({
     return `${proto}://${host}`;
   }
 
-  const SITE_DESCRIPTION = `Live video, ${maxSeconds} seconds at a time. No uploads, no editing.`;
+  const SITE_DESCRIPTION = `One take, ${maxSeconds} seconds. No uploads, no editing.`;
 
   async function posterSize(s) {
     if (!s.hasPoster) return null;
@@ -467,8 +467,8 @@ export function createApp({
         const secs = s.endedAt ? Math.max(1, Math.round((s.endedAt - s.startedAt) / 1000)) : null;
         const day = new Date(s.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
         info = {
-          title: s.status === 'live' ? `${name} is live on live5` : `${name} on live5`,
-          description: s.status === 'live' ? 'Live right now. Catch it before it ends.' : `A ${secs ? `${secs}-second ` : ''}live from ${day}.`,
+          title: s.status === 'live' ? `${name} is recording on live5` : `${name} on live5`,
+          description: s.status === 'live' ? 'Recording right now. Watch the take as it happens.' : `A ${secs ? `${secs}-second ` : ''}take from ${day}.`,
           path: `/watch/${s.id}`, image: s.hasPoster ? s : null, type: 'video.other',
           author: u && { name, path: `/u/${u.id}` },
         };
@@ -479,7 +479,7 @@ export function createApp({
         const count = [...streams.values()].filter((s) => s.userId === u.id && !s.empty).length;
         info = {
           title: `${u.name} on live5`,
-          description: `${count} ${count === 1 ? 'live' : 'lives'} on live5. ${SITE_DESCRIPTION}`,
+          description: `${count} ${count === 1 ? 'take' : 'takes'} on live5. ${SITE_DESCRIPTION}`,
           path: `/u/${u.id}`, image: latestWithPoster((s) => s.userId === u.id), type: 'profile',
           author: { name: u.name, path: `/u/${u.id}` },
         };
@@ -604,11 +604,11 @@ export function createApp({
       const base = type.split(';')[0].trim().toLowerCase();
       if (!Object.hasOwn(EXT, base)) return json(res, 400, { error: 'unsupported type' });
       for (const other of streams.values()) {
-        if (other.userId === u.id && other.status === 'live') return json(res, 409, { error: 'you are already live' });
+        if (other.userId === u.id && other.status === 'live') return json(res, 409, { error: 'you are already recording' });
       }
       const usage = dailyUsage(u);
       if (!usage.leftToday) {
-        const lives = maxPerDay === 1 ? 'your live' : `all ${maxPerDay} lives`;
+        const lives = maxPerDay === 1 ? 'your take' : `all ${maxPerDay} takes`;
         return json(res, 429, { error: `you've had ${lives} for the last ${limitHours} hours`, ...usage });
       }
       const s = {

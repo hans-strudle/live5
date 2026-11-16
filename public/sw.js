@@ -1,4 +1,4 @@
-// live5 service worker: shows "Sam just went live" notifications and opens the live when tapped.
+// live5 service worker: shows "Sam is recording right now" notifications and opens the take when tapped.
 // No offline caching.
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
@@ -6,7 +6,7 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch {}
-  event.waitUntil(self.registration.showNotification(data.title || 'Someone just went live', {
+  event.waitUntil(self.registration.showNotification(data.title || 'Someone is recording right now', {
     body: data.body || '',
     icon: data.icon || '/icon.svg',
     badge: '/icon.svg',

@@ -16,11 +16,11 @@
 <body class="feed-page">
   <header class="float-header">
     <a class="logo" href="/">live5</a>
-    <nav><button class="bell" id="bell" type="button" hidden></button><a class="btn live" href="/go">Go live</a></nav>
+    <nav><button class="bell" id="bell" type="button" hidden></button><a class="btn live" href="/go">Record</a></nav>
   </header>
   <main class="feed" id="feed">
     <!-- Profile heading at the top of the page; it scrolls away with the feed, and this
-         person's lives follow straight after it. -->
+         person's takes follow straight after it. -->
     <section class="profile-head">
       <span class="avatar lg" id="avatar" aria-hidden="true"></span>
       <div class="profile-text">
@@ -53,13 +53,13 @@
       avatar.id = 'avatar';
       $('avatar').replaceWith(avatar);
       $('meta').textContent = liveNow
-        ? `Live now · ${count} ${count === 1 ? 'live' : 'lives'}`
-        : `${count} ${count === 1 ? 'live' : 'lives'} · joined ${new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
+        ? `Recording now · ${count} ${count === 1 ? 'take' : 'takes'}`
+        : `${count} ${count === 1 ? 'take' : 'takes'} · joined ${new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
       $('you').hidden = !(me && me.id === u.id);
       createFeed($('feed'), {
         user: u.id,
-        emptyTitle: 'No lives yet',
-        emptyText: me && me.id === u.id ? 'Your lives will show up here.' : `${u.name} hasn’t gone live yet.`,
+        emptyTitle: 'No takes yet',
+        emptyText: me && me.id === u.id ? 'Your takes will show up here.' : `${u.name} hasn’t recorded anything yet.`,
       });
     }
   </script>

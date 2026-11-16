@@ -8,7 +8,7 @@ export const streamUrl = (stream) => `${location.origin}/watch/${stream.id}`;
 export async function shareStream(stream) {
   const url = streamUrl(stream);
   const who = stream.name || 'Someone';
-  const title = stream.status === 'live' ? `${who} is live on live5` : `${who} on live5`;
+  const title = stream.status === 'live' ? `${who} is recording on live5` : `${who} on live5`;
   if (navigator.share) {
     try {
       await navigator.share({ title, text: title, url });

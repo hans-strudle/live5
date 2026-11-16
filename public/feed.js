@@ -279,7 +279,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     video.onerror = () => {
       if (!card.attached) return;
       card.broken = true;
-      showNote(card.stream.status === 'live' ? 'Can’t play this live here. The replay will follow.' : 'This video can’t play in this browser.');
+      showNote(card.stream.status === 'live' ? 'Can’t play this while it’s recording. The replay will follow.' : 'This video can’t play in this browser.');
     };
     video.onplaying = () => { note.hidden = true; };
 
@@ -300,9 +300,9 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
   function render(card) {
     const s = card.stream;
     const live = s.status === 'live';
-    card.badge.textContent = 'LIVE';
+    card.badge.textContent = 'RECORDING NOW'; // quiet label (red dot only): live isn't the headline
     card.badge.classList.toggle('on', live);
-    card.badge.hidden = !live; // a replay needs no label
+    card.badge.hidden = !live; // a finished take needs no label
     card.meta.textContent = live
       ? `${s.viewers} watching`
       : `${ago(s.startedAt)}${s.durationMs ? ` · ${seconds(s.durationMs)}` : ''}`;
@@ -372,7 +372,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
       let sb;
       try { sb = ms.addSourceBuffer(type); } catch {
         card.broken = true;
-        card.showNote('Can’t play this live here. The replay will follow.');
+        card.showNote('Can’t play this while it’s recording. The replay will follow.');
         return;
       }
       const append = (buf) => new Promise((resolve, reject) => {
@@ -483,7 +483,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     if (root.querySelector('.card-empty')) return;
     const box = el('section', 'card card-empty');
     box.append(el('h2', null, emptyTitle), el('p', 'muted', text || emptyText));
-    const go = el('a', 'btn live', 'Go live');
+    const go = el('a', 'btn live', 'Record');
     go.href = '/go';
     box.append(go);
     root.append(box);
@@ -501,8 +501,8 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     return loadMore();
   }
 
-  // ---------- someone just went live ----------
-  // A banner over the feed: "Sam just went live · Watch". Watch puts that live right after the
+  // ---------- someone started recording ----------
+  // A banner over the feed: "Sam is recording · Watch". Watch puts that live right after the
   // broadcast on screen and scrolls to it. Hides itself after a while, or when the live ends.
   const me = getUser();
   const announced = new Set();
@@ -530,7 +530,7 @@ export function createFeed(root, { user = null, first = null, emptyTitle = 'Noth
     bannerText.replaceChildren();
     const name = el('strong', null, s.name);
     const others = list.length - 1;
-    bannerText.append(name, others ? ` and ${others} ${others === 1 ? 'other' : 'others'} are live` : ' is live');
+    bannerText.append(name, others ? ` and ${others} ${others === 1 ? 'other' : 'others'} are recording` : ' is recording');
     banner.hidden = false;
     clearTimeout(bannerTimer);
     bannerTimer = setTimeout(hideBanner, 12000);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Go live · live5</title>
+  <title>Record · live5</title>
   <!--META-->
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -15,16 +15,17 @@
 </head>
 <body>
 <!-- The studio: the camera fills the screen; status across the top, controls over the bottom.
-     The Go live button is there from the start (greyed out until the camera is ready).
+     The Record button is there from the start (greyed out until the camera is ready).
      Someone without a profile is asked for their name in a popup over the camera when they
-     press Go live. -->
+     press Record. Recording is live: viewers see it as it happens, but the wording here is
+     about recording one take, not about being live. -->
 <div id="studio" class="studio">
   <video id="cam" autoplay muted playsinline></video>
-  <!-- After a live: the last camera frame stays on screen instead of going black. -->
+  <!-- After a take: the last camera frame stays on screen instead of going black. -->
   <img class="endframe" id="endframe" alt="" hidden>
   <div class="studio-top">
     <a class="logo" href="/" aria-label="Back to live5">live5</a>
-    <div class="badge" id="badge">OFF AIR</div>
+    <div class="badge" id="badge">READY</div>
     <div class="timer" id="timer" hidden></div>
     <button class="flip-btn" id="flip" type="button" hidden aria-label="Switch camera" title="Switch camera"></button>
   </div>
@@ -32,23 +33,23 @@
   <div class="studio-bottom">
     <p class="as" id="as"></p>
     <div class="controls">
-      <button class="btn live go-btn" id="go" disabled>Go live</button>
+      <button class="btn live go-btn" id="go" disabled>Record</button>
       <button class="btn go-btn end" id="stop" hidden>End</button>
-      <button class="live-share" id="live-share" type="button" hidden aria-label="Share your live" title="Share your live"></button>
+      <button class="live-share" id="live-share" type="button" hidden aria-label="Share your take" title="Share your take"></button>
       <button class="btn ghost" id="retry" hidden>Try camera again</button>
     </div>
     <p class="quota" id="quota" hidden></p>
     <p class="studio-msg" id="msg">Starting camera…</p>
     <p class="share" id="share" hidden></p>
-    <!-- End screen: shown once a live has ended. -->
+    <!-- End screen: shown once a take has ended. -->
     <div class="end-panel" id="end" hidden>
-      <h2 id="end-title">Live ended</h2>
+      <h2 id="end-title">That’s your take</h2>
       <p id="end-sub"></p>
       <div class="end-actions">
         <button class="btn" id="replay" type="button">Watch replay</button>
         <button class="btn ghost-light" id="end-share" type="button">Share</button>
       </div>
-      <p class="end-links"><span id="end-again" hidden><a href="/go">Go live again</a> · </span><a id="end-profile" href="/">Your profile</a> · <a href="/">Back to the feed</a></p>
+      <p class="end-links"><span id="end-again" hidden><a href="/go">Record another</a> · </span><a id="end-profile" href="/">Your profile</a> · <a href="/">Back to the feed</a></p>
     </div>
   </div>
 </div>
@@ -213,11 +214,11 @@
     return `${sec}s`;
   }
 
-  // While locked, the Go live button itself counts down to the next live.
+  // While locked, the Record button itself counts down to the next take.
   let lockTick = null;
   function renderLockedButton() {
     if (recorder || !usage || usage.leftToday > 0 || !usage.nextAt) return;
-    go.textContent = `Next live in ${untilText(usage.nextAt - Date.now())}`;
+    go.textContent = `Next take in ${untilText(usage.nextAt - Date.now())}`;
   }
 
   function renderQuota() {
@@ -232,12 +233,12 @@
     const hours = usage.limitHours;
     if (out) {
       const when = usage.nextAt ? whenText(usage.nextAt) : null;
-      const used = one ? `One live every ${hours} hours.` : `All ${usage.dailyLimit} lives used.`;
+      const used = one ? `One take every ${hours} hours.` : `All ${usage.dailyLimit} takes used.`;
       q.textContent = when ? `${used} Next one ${when}.` : used;
     } else {
       q.textContent = one
-        ? `One live every ${hours} hours.`
-        : `${usage.leftToday} of ${usage.dailyLimit} lives left (per ${hours} hours)`;
+        ? `One take every ${hours} hours.`
+        : `${usage.leftToday} of ${usage.dailyLimit} takes left (per ${hours} hours)`;
     }
     if (!recorder) {
       go.classList.toggle('locked', out);
@@ -246,7 +247,7 @@
         renderLockedButton();
         lockTick = setInterval(renderLockedButton, 1000);
       } else {
-        go.textContent = 'Go live';
+        go.textContent = 'Record';
         if (media) go.disabled = false;
       }
     }
@@ -260,7 +261,7 @@
     if (r && r.ok) takeUsage(await r.json());
   }
 
-  // "Going live as Name · change name · your profile" (nothing until there's a user).
+  // "Recording as Name · change name · your profile" (nothing until there's a user).
   function renderAs() {
     const as = $('as');
     as.replaceChildren();
@@ -275,7 +276,7 @@
       if (recorder) return;
       const updated = await askName({
         title: 'Change your name', initial: user.name, action: 'Save',
-        note: 'Shown on your lives and comments.',
+        note: 'Shown on your takes and comments.',
         onSubmit: (name) => renameUser(user, name),
       });
       if (updated) { user = updated; renderAs(); refreshUsage(); }
@@ -283,7 +284,7 @@
     const profile = document.createElement('a');
     profile.href = `/u/${user.id}`;
     profile.textContent = 'your profile';
-    as.append('Going live as ', b, ' · ', change, ' · ', profile);
+    as.append('Recording as ', b, ' · ', change, ' · ', profile);
   }
 
   // The camera starts right away for everyone; the name is only asked for when going live.
@@ -392,9 +393,9 @@
   // The end screen: what happened, how long it was, and what next (replay, share, go again).
   function showEndScreen(text) {
     const secs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-    $('end-title').textContent = text === TIME_UP ? 'Time’s up' : 'Live ended';
+    $('end-title').textContent = text === TIME_UP ? 'Time’s up' : 'That’s your take';
     const why = text === TIME_UP || text === STOPPED ? '' : ` ${text}`;
-    $('end-sub').textContent = `You were on for ${secs} second${secs === 1 ? '' : 's'}.${why}`;
+    $('end-sub').textContent = `You recorded ${secs} second${secs === 1 ? '' : 's'}.${why}`;
     $('end-profile').href = `/u/${user.id}`;
     $('end-again').hidden = !(usage && usage.leftToday > 0); // only if the limit allows another
     $('as').hidden = true;
@@ -430,9 +431,9 @@
     // First time: ask for a name in a popup over the camera, then go live straight away.
     if (!user) {
       user = await ensureUser({
-        title: 'Your name before you go live',
+        title: 'Your name before you record',
         note: 'Shown to everyone who watches. No account needed.',
-        action: 'Go live',
+        action: 'Record',
       });
       if (!user) { go.disabled = false; return; } // cancelled
       renderAs();
@@ -454,7 +455,7 @@
     // Pieces that arrive while ending (the recorder's final flush) are still sent.
     recorder.ondataavailable = (e) => { if (e.data.size) send(e.data); };
     // The recorder stopping by itself means the camera went away (a call came in, permission
-    // was taken back): say so now rather than showing LIVE over nothing until the time runs out.
+    // was taken back): say so now rather than showing REC over nothing until the time runs out.
     recorder.onstop = () => { if (!ending) finish('The camera stopped.'); };
     recorder.onerror = () => finish('Recording failed.');
     recorder.start(500);
@@ -467,7 +468,7 @@
     if (!r || !r.ok) {
       const err = r && (await r.json().catch(() => null));
       takeUsage(err); // a 429 carries the current usage and when the next live frees up
-      finish(`Couldn’t go live${err && err.error ? `: ${err.error}` : ''}.`);
+      finish(`Couldn’t start recording${err && err.error ? `: ${err.error}` : ''}.`);
       return;
     }
     stream = await r.json();
@@ -486,7 +487,7 @@
     // button with a small share icon at the bottom (CSS hides the rest under .is-live).
     $('studio').classList.add('is-live');
     go.hidden = true; stop.hidden = false;
-    $('badge').textContent = 'LIVE'; $('badge').classList.add('on');
+    $('badge').textContent = 'REC'; $('badge').classList.add('on');
     $('timer').hidden = false;
     const liveShare = $('live-share');
     liveShare.replaceChildren(shareIcon());

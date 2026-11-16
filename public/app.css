@@ -59,6 +59,10 @@ button { -webkit-tap-highlight-color: transparent; }
   touch-action: manipulation; /* no double-tap zoom on phones: a double tap is a like */ }
 .card-top { position: absolute; top: calc(64px + env(safe-area-inset-top)); left: 16px; pointer-events: none; }
 .card-top .badge { position: static; display: inline-block; }
+/* In the feed, "recording now" is a quiet label: dark like any other, with just a red dot. */
+.card-top .badge.on { background: rgba(0,0,0,.6); color: rgba(255,255,255,.85); }
+.card-top .badge.on::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px;
+  border-radius: 50%; background: var(--live); vertical-align: 1px; }
 .card-info { position: absolute; left: 0; right: 0; bottom: 0; padding: 64px 72px calc(28px + env(safe-area-inset-bottom)) 16px;
   background: linear-gradient(transparent, rgba(0,0,0,.6)); pointer-events: none; }
 .card-who { pointer-events: auto; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; max-width: 100%; }

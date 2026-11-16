@@ -1,4 +1,4 @@
-// The bell button: turn phone notifications ("Sam just went live") on or off for this device.
+// The bell button: turn phone notifications ("Sam is recording right now") on or off for this device.
 // Uses Web Push through the service worker (/sw.js). On iPhone/iPad, Apple only allows web
 // notifications for sites added to the Home Screen, so in a Safari tab the button explains that.
 import { getUser, authHeaders } from '/me.js';
@@ -18,7 +18,7 @@ function keyBytes(b64u) {
 function render(btn, on) {
   btn.replaceChildren(icon(on ? 'bell' : 'bellOff', 20));
   btn.classList.toggle('on', on);
-  const label = on ? 'Live alerts are on. Tap to turn them off.' : 'Get an alert when someone goes live';
+  const label = on ? 'Alerts are on. Tap to turn them off.' : 'Get an alert when someone starts recording';
   btn.setAttribute('aria-label', label);
   btn.title = label;
 }
@@ -36,7 +36,7 @@ function explainHomeScreen() {
   const d = document.createElement('dialog');
   d.className = 'welcome';
   d.innerHTML = `
-    <h2>Live alerts on iPhone</h2>
+    <h2>Alerts on iPhone</h2>
     <p class="welcome-lead">iPhones only allow alerts from sites on the Home Screen.</p>
     <ol>
       <li>Tap Share in Safari’s toolbar.</li>
@@ -77,21 +77,21 @@ export async function setupBell(btn) {
         }).catch(() => {});
         await sub.unsubscribe();
         render(btn, false);
-        toast('Live alerts off');
+        toast('Alerts off');
         return;
       }
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        toast(permission === 'denied' ? 'Notifications are blocked in your browser settings' : 'Live alerts are still off');
+        toast(permission === 'denied' ? 'Notifications are blocked in your browser settings' : 'Alerts are still off');
         return;
       }
       const { publicKey } = await (await fetch('/api/push/key')).json();
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
       await saveSubscription(sub);
       render(btn, true);
-      toast('Live alerts on');
+      toast('Alerts on');
     } catch {
-      toast('Couldn’t turn on live alerts');
+      toast('Couldn’t turn on alerts');
     } finally {
       btn.disabled = false;
     }

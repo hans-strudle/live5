@@ -1,7 +1,7 @@
 {
   "name": "live5",
   "short_name": "live5",
-  "description": "Live video, 30 seconds at a time. No uploads, no editing.",
+  "description": "One take, 30 seconds. No uploads, no editing.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

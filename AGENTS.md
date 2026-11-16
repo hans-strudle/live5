@@ -2,8 +2,9 @@
 
 ## Product rules (do not weaken without the owner's say-so)
 
+- Positioning: one take. People "record" a take; it happens to be live (viewers can watch as it's recorded), but live is not the selling point (owner decision, 2026-11-15). User-facing words: the button is *Record*, a video is a "take", the recording screen shows REC, viewers see a quiet "Recording now" label (dark with a red dot, not a red LIVE badge), alerts say "X is recording right now". Don't bring back "live", "go live" or "on air" in user-facing text. Still say plainly (welcome popup) that people can watch while you record. Code, API and data keep the old names (`status: 'live'`, "broadcast", `LIVE5_*`), and the product is still called live5. The rules below use those internal words.
 - The only way to create video is a live camera broadcast. No file upload, import, or paste path — in the UI or the API.
-- Going live is immediate. No preview/review/publish step between pressing *Go live* and viewers seeing it.
+- Recording is live and immediate. No preview/review/publish step between pressing *Record* and viewers seeing it.
 - Broadcasts are short and hard-capped server-side (time and bytes), not just in the client. Current cap: 30 seconds per stream (owner decision, 2026-11-13; previously 5 s).
 - No logins. Each device gets a user with a public UUID and a private key (only the key's hash is stored server-side). Broadcasts are tied to the UUID, never to the display name. Names are free text: cleaned, at most 30 characters, changeable, not unique, and prove nothing about identity (owner decision, 2026-11-13).
 - Profiles (`/u/<uuid>`) list a user's broadcasts, live and past, after a short heading in the page flow: picture, name, details. It's not floating and not full-screen; the first video follows directly (owner decision, 2026-11-14).
@@ -12,15 +13,15 @@
 - The home page and profiles are a full-screen vertical feed, one broadcast per screen (`public/feed.js`).
 - No separate watch page: a shared link (`/watch/<id>`) serves the main feed with that broadcast first, then the rest of the feed auto-plays (owner decision, 2026-11-14). The server still fills in that link's preview tags.
 - The only non-video file the server accepts is the preview JPEG. It's grabbed from the live camera by `/go`, and the server accepts it only with the broadcast token, only while live, only once, up to 300 KB. It's a cover image, not an upload feature: there is no image picker.
-- Daily limit: each user can go live once per rolling 12 hours (default `maxPerDay` 1 per `limitHours` 12; was 5 per 24 hours), enforced server-side; the Go live button shows a lock with a countdown until then (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
+- Daily limit: each user can go live once per rolling 12 hours (default `maxPerDay` 1 per `limitHours` 12; was 5 per 24 hours), enforced server-side; the Record button shows a lock with a "Next take in…" countdown until then (owner decision, 2026-11-14). Lives marked `empty` don't count. The limit is per user, so someone can get around it by starting a new profile (another browser, or after clearing site data).
 - First visit shows a welcome popup explaining the rules (`public/welcome.js`, once per device).
 - Comments are simple: plain text, one line, at most 200 characters, append-only (no editing or deleting), one every 3 seconds per user, tied to the user's UUID like broadcasts (owner request, 2026-11-14).
 - Likes are private: anyone can like (anonymous per-device viewer id, no name needed), but like counts are never shown to viewers or broadcasters and never returned by the API (owner request, 2026-11-14).
-- Going live is announced: an in-feed banner (5-second checks) and opt-in Web Push "X just went live" notifications to all subscribed devices except the broadcaster's own (owner request, 2026-11-14). There's no following yet, so alerts cover everyone.
+- Starting a take is announced: an in-feed banner ("X is recording", 5-second checks) and opt-in Web Push "X is recording right now" notifications to all subscribed devices except the broadcaster's own (owner request, 2026-11-14). There's no following yet, so alerts cover everyone.
 - Web Push stays dependency-free (`push.mjs`): only send to known push-service hosts (prevents the server being used to POST to arbitrary URLs).
 - No editing: no trimming, replacing, deleting or reordering chunks; chunks are accepted only in sequence, only while live, only with the broadcast token.
 
-- Web-only for now: no native, TestFlight or App Store app. iPhone users add live5 to the Home Screen, which also enables live alerts (owner decision, 2026-11-14). A public App Store release would first need reporting, blocking and content filtering (Apple guideline 1.2).
+- Web-only for now: no native, TestFlight or App Store app. iPhone users add live5 to the Home Screen, which also enables alerts (owner decision, 2026-11-14). A public App Store release would first need reporting, blocking and content filtering (Apple guideline 1.2).
 
 ## Engineering
 
@@ -37,7 +38,7 @@
 - The `/go` page resends a piece of video that failed to send. It relies on the server's 409 answer naming the piece it `expected` next (one past the resent piece means it had arrived), so keep that field.
 - A live that recorded no bytes is marked `empty` whatever its format. After a crash, a broadcast left as `live` on disk is closed at startup using the recording's real size and time.
 - `mp4.mjs` reads files made by whoever was broadcasting: never loop on a count taken from the file without a bound.
-- Icons are inline SVG from `public/icons.js`, not emoji. Red (`--live`) is only for live state and the Go live buttons.
+- Icons are inline SVG from `public/icons.js`, not emoji. Red (`--live`) is only for recording-in-progress state (REC badge, the dot on "Recording now") and the Record buttons.
 - Camera flip (front/back) on `/go` is only available before going live: the recorder is tied to the camera it started with. Switching always stops the open camera before opening the other (phones can't hold two), and falls back to the previous camera if the other won't open.
 - Do not deploy, publish, commit or push without the owner's authorization.
 

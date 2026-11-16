@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Live-only short video broadcasts. No uploads, no editing.",
+  "description": "One-take short videos, recorded live. No uploads, no editing.",
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node server.mjs",

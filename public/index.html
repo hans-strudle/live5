@@ -19,7 +19,7 @@
     <nav>
       <button class="bell" id="bell" type="button" hidden></button>
       <a class="ghost-link" id="me" hidden>You</a>
-      <a class="btn live" href="/go">Go live</a>
+      <a class="btn live" href="/go">Record</a>
     </nav>
   </header>
   <main class="feed" id="feed" aria-label="Broadcasts"></main>
@@ -36,7 +36,7 @@
     createFeed(document.getElementById('feed'), {
       first: shared ? decodeURIComponent(shared[1]) : null,
       emptyTitle: 'Nothing here yet',
-      emptyText: 'Nobody has gone live so far. You could be first.',
+      emptyText: 'Nobody has recorded anything so far. You could be first.',
     });
   </script>
 </body>

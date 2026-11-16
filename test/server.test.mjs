@@ -295,7 +295,7 @@ test('push encryption (RFC 8291) decrypts with the subscriber keys', () => {
   const ua = createECDH('prime256v1');
   const uaPublic = ua.generateKeys();
   const authSecret = randomBytes(16);
-  const body = encryptPayload('{"title":"Sam just went live"}', uaPublic.toString('base64url'), authSecret.toString('base64url'));
+  const body = encryptPayload('{"title":"Sam is recording right now"}', uaPublic.toString('base64url'), authSecret.toString('base64url'));
   const salt = body.subarray(0, 16);
   assert.equal(body.readUInt32BE(16), 4096);
   const idLen = body[20];
@@ -309,7 +309,7 @@ test('push encryption (RFC 8291) decrypts with the subscriber keys', () => {
   d.setAuthTag(ciphertext.subarray(-16));
   const plain = Buffer.concat([d.update(ciphertext.subarray(0, -16)), d.final()]);
   assert.equal(plain.at(-1), 2, 'last-record delimiter');
-  assert.equal(plain.subarray(0, -1).toString(), '{"title":"Sam just went live"}');
+  assert.equal(plain.subarray(0, -1).toString(), '{"title":"Sam is recording right now"}');
 });
 
 // ---------- pages and files ----------
@@ -322,7 +322,7 @@ test('link previews escape names; oEmbed describes broadcasts and profiles', asy
   const { body: s } = await goLive(app.base, u);
   const page = `${app.base}/watch/${s.id}`;
   const watch = await (await fetch(page)).text();
-  assert.match(watch, /is live on live5/);
+  assert.match(watch, /is recording on live5/);
   const o = await getJson(app.base, `/oembed?url=${encodeURIComponent(page)}`);
   assert.equal(o.type, 'link');
   assert.equal(o.author_url, `${app.base}/u/${u.id}`);
